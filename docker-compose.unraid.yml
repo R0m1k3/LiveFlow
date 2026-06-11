@@ -17,6 +17,10 @@ services:
     restart: unless-stopped
     ports:
       - "8443:443"
+    environment:
+      # ← IP (ou nom d'hôte) de votre serveur Unraid : utilisée pour générer
+      #   le certificat HTTPS auto-signé. À adapter si votre IP diffère.
+      - LIVEFLOW_HOST=192.168.1.16
     volumes:
       - /mnt/user/appdata/liveflow/Caddyfile:/etc/caddy/Caddyfile:ro
       - /mnt/user/appdata/liveflow/caddy/data:/data

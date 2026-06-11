@@ -2,9 +2,13 @@
 	# Certificats auto-signés locaux : indispensable pour que le navigateur
 	# (surtout sur téléphone) autorise l'accès au micro (getUserMedia).
 	local_certs
+	# Les connexions par IP n'envoient pas de SNI : on force le certificat.
+	default_sni {$LIVEFLOW_HOST:localhost}
 }
 
-:443 {
+# LIVEFLOW_HOST = IP ou nom d'hôte du serveur (défini dans docker-compose).
+# Caddy génère un certificat auto-signé pour cette adresse au démarrage.
+{$LIVEFLOW_HOST:localhost}:443 {
 	tls internal
 	reverse_proxy app:8000
 }
