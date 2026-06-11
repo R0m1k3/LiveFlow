@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiveFlow — Transcription de réunions</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🎙️ LiveFlow</h1>
+    <span id="status" class="badge idle">Prêt</span>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <h2>Réunions</h2>
+      <ul id="meeting-list"></ul>
+    </aside>
+
+    <main>
+      <section class="controls">
+        <input id="title" type="text" placeholder="Titre de la réunion (optionnel)">
+        <button id="record-btn" class="record">● Démarrer</button>
+        <span id="timer">00:00</span>
+      </section>
+
+      <section id="transcript-panel">
+        <div class="panel-head">
+          <h2 id="transcript-title">Transcription</h2>
+          <div id="export-bar" class="hidden">
+            <button id="copy-btn" title="Copier le texte">📋 Copier</button>
+            <a id="export-txt" download>TXT</a>
+            <a id="export-md" download>MD</a>
+            <a id="export-srt" download>SRT</a>
+            <a id="export-json" download>JSON</a>
+            <button id="delete-btn" title="Supprimer la réunion">🗑️</button>
+          </div>
+        </div>
+        <div id="transcript">
+          <p class="placeholder">Appuyez sur « Démarrer » et parlez : le texte apparaît ici au fil de l'eau.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+	# Certificats auto-signés locaux : indispensable pour que le navigateur
+	# (surtout sur téléphone) autorise l'accès au micro (getUserMedia).
+	local_certs
+}
+
+:443 {
+	tls internal
+	reverse_proxy app:8000
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}
