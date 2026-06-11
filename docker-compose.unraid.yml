@@ -7,7 +7,8 @@
 #   3. Créer une stack Compose Manager pointant sur ce fichier
 #
 # Les ports 80/443 étant utilisés par l'interface Unraid, l'app est exposée
-# sur 8443 : ouvrir https://<ip-unraid>:8443 (accepter le certificat).
+# uniquement en HTTPS sur 8443 : ouvrir https://<ip-unraid>:8443
+# (accepter le certificat auto-signé).
 
 services:
   caddy:
@@ -15,7 +16,6 @@ services:
     container_name: liveflow-caddy
     restart: unless-stopped
     ports:
-      - "8088:80"
       - "8443:443"
     volumes:
       - /mnt/user/appdata/liveflow/Caddyfile:/etc/caddy/Caddyfile:ro
