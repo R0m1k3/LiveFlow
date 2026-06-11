@@ -5,12 +5,12 @@ Capture du micro depuis un navigateur (PC ou téléphone), transcription par
 **Qwen3-ASR** sur GPU NVIDIA, affichage du texte au fil de l'eau, historique
 et export (TXT, Markdown, SRT, JSON).
 
-Architecture détaillée : voir [ARCHITECTURE.md](ARCHITECTURE.md) (proposition 2 retenue).
+Architecture détaillée : voir [ARCHITECTURE.md](ARCHITECTURE.md) (proposition 2 retenue,
+sans reverse proxy : l'app sert directement le HTTPS).
 
 ```
 Navigateur (micro, HTTPS/WebSocket)
-   → Caddy (TLS local)
-   → app FastAPI (VAD + segments + SQLite + interface web)
+   → app FastAPI (HTTPS auto-signé + VAD + segments + SQLite + interface web)
    → conteneur ASR Qwen3-ASR via vLLM (API compatible OpenAI)
 ```
 
@@ -35,23 +35,24 @@ Hugging Face (quelques Go, mis en cache dans un volume). Suivre avec :
 docker compose logs -f asr
 ```
 
-Puis ouvrir **https://\<ip-du-serveur\>** depuis un PC ou un téléphone du
-réseau local, accepter le certificat auto-signé, autoriser le micro, et
+Puis ouvrir **https://\<ip-du-serveur\>:8443** depuis un PC ou un téléphone du
+réseau local, accepter l'avertissement de certificat, autoriser le micro, et
 cliquer sur **Démarrer**.
 
 > ⚠️ Le HTTPS est obligatoire : les navigateurs n'autorisent l'accès au micro
-> (`getUserMedia`) qu'en HTTPS (ou sur `localhost`). Caddy génère
-> automatiquement un certificat local auto-signé. Pour supprimer
-> l'avertissement du navigateur, vous pouvez installer la CA racine de Caddy
-> sur vos appareils : `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt .`
+> (`getUserMedia`) qu'en HTTPS (ou sur `localhost`). L'app génère elle-même un
+> certificat auto-signé au premier démarrage pour l'adresse `LIVEFLOW_HOST`
+> (stocké dans le volume de données ; supprimez `data/certs/` pour le
+> régénérer après un changement d'adresse).
 
 ## Unraid
 
 Un compose dédié est fourni : [`docker-compose.unraid.yml`](docker-compose.unraid.yml)
-(chemins `appdata`, GPU via `runtime: nvidia`, ports 8088/8443 car 80/443 sont
-pris par l'interface Unraid). Prérequis : plugins **Nvidia Driver** et
-**Docker Compose Manager**. Cloner le dépôt dans `/mnt/user/appdata/liveflow`,
-créer une stack pointant sur ce fichier, puis ouvrir `https://<ip-unraid>:8443`.
+(chemins `appdata`, GPU via `runtime: nvidia`, port 8443). Prérequis : plugins
+**Nvidia Driver** et **Docker Compose Manager**. Extraire le dépôt dans
+`/mnt/user/appdata/liveflow`, renseigner `LIVEFLOW_HOST` (IP du serveur) dans
+le compose, créer une stack pointant sur ce fichier, puis ouvrir
+`https://<ip-unraid>:8443`.
 
 ## Configuration
 

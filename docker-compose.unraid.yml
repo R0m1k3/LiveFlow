@@ -2,37 +2,23 @@
 #
 # Prérequis :
 #   1. Plugin "Nvidia Driver" installé (Community Applications)
-#   2. Cloner ce dépôt dans /mnt/user/appdata/liveflow :
-#        cd /mnt/user/appdata && git clone -b claude/laughing-thompson-ci0zw1 <url-du-repo> liveflow
-#   3. Créer une stack Compose Manager pointant sur ce fichier
+#   2. Le dépôt extrait dans /mnt/user/appdata/liveflow
+#   3. Une stack Compose Manager pointant sur ce fichier
 #
-# Les ports 80/443 étant utilisés par l'interface Unraid, l'app est exposée
-# uniquement en HTTPS sur 8443 : ouvrir https://<ip-unraid>:8443
-# (accepter le certificat auto-signé).
+# L'app sert directement le HTTPS avec un certificat auto-signé (requis par
+# les navigateurs pour autoriser le micro) : ouvrir https://<ip-unraid>:8443
+# et accepter l'avertissement de certificat.
 
 services:
-  caddy:
-    image: caddy:2-alpine
-    container_name: liveflow-caddy
-    restart: unless-stopped
-    ports:
-      - "8443:443"
-    environment:
-      # ← IP (ou nom d'hôte) de votre serveur Unraid : utilisée pour générer
-      #   le certificat HTTPS auto-signé. À adapter si votre IP diffère.
-      - LIVEFLOW_HOST=192.168.1.16
-    volumes:
-      - /mnt/user/appdata/liveflow/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /mnt/user/appdata/liveflow/caddy/data:/data
-      - /mnt/user/appdata/liveflow/caddy/config:/config
-    depends_on:
-      - app
-
   app:
     build: /mnt/user/appdata/liveflow/app
     container_name: liveflow-app
     restart: unless-stopped
+    ports:
+      - "8443:8000"
     environment:
+      # ← IP (ou nom d'hôte) de votre serveur Unraid, pour le certificat HTTPS
+      - LIVEFLOW_HOST=192.168.1.16
       - ASR_BASE_URL=http://asr:8000/v1
       - ASR_MODEL=Qwen/Qwen3-ASR-1.7B
       - ASR_API_KEY=sk-local

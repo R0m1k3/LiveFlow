@@ -1,24 +1,12 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      # IP ou nom d'hôte du serveur, pour le certificat HTTPS auto-signé
-      - LIVEFLOW_HOST=${LIVEFLOW_HOST:-localhost}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - app
-
   app:
     build: ./app
     restart: unless-stopped
+    ports:
+      - "8443:8000"
     environment:
+      # IP ou nom d'hôte du serveur, pour le certificat HTTPS auto-signé
+      - LIVEFLOW_HOST=${LIVEFLOW_HOST:-localhost}
       - ASR_BASE_URL=http://asr:8000/v1
       - ASR_MODEL=Qwen/Qwen3-ASR-1.7B
       - ASR_API_KEY=${ASR_API_KEY:-sk-local}
@@ -50,7 +38,5 @@ services:
               capabilities: [gpu]
 
 volumes:
-  caddy-data:
-  caddy-config:
   liveflow-data:
   hf-cache:
