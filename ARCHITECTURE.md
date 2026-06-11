@@ -83,9 +83,15 @@ stocké en SQLite ; bouton « Exporter » → TXT/MD/SRT.
 
 **Stack :** docker-compose à 3 services : `caddy` + `app` + `asr`.
 Pour le service ASR, des images Docker prêtes à l'emploi existent :
-- **Speaches** (ex *faster-whisper-server*) : API compatible OpenAI, streaming, CPU/GPU
-- **whisper.cpp server** : très léger, idéal CPU
-- **vLLM / autre runtime** servant un modèle audio de la famille Qwen si vous voulez rester sur Qwen
+- **Qwen3-ASR** (image officielle `qwenllm/qwen3-asr`, API compatible OpenAI via
+  vLLM, streaming) : état de l'art open source 2026 en précision — nécessite un GPU NVIDIA
+- **Parakeet-TDT-0.6B-v3** (NVIDIA, wrapper FastAPI compatible OpenAI) : très
+  rapide même sur CPU, 25 langues européennes dont le français
+- **Speaches** (ex *faster-whisper-server*) ou **WhisperLive** : écosystème
+  Whisper le plus mûr pour le live, CPU/GPU
+- **whisper.cpp server** : très léger, idéal petites machines CPU
+
+> Voir la section « Choix du moteur ASR » en fin de document pour le comparatif 2026.
 
 L'app ne connaît que l'URL `ASR_BASE_URL` : **changer de moteur = changer une
 ligne dans le compose**, zéro modification de code.
@@ -155,6 +161,34 @@ pyannote) · Redis · Postgres · Ollama avec Qwen3 pour le résumé · frontend
 | Résumé LLM (Qwen3 via Ollama) | Non | Facile à ajouter | Oui |
 | GPU requis | Non (CPU ok) | Non (CPU ok) | Recommandé |
 | Multi-réunions simultanées | Limité | Moyen | Oui |
+
+## Choix du moteur ASR — état de l'art (recherche juin 2026)
+
+faster-whisper n'est **plus** le meilleur en précision : c'est simplement
+Whisper optimisé (CTranslate2, ~4× plus rapide, précision identique). Sur le
+leaderboard Open ASR de Hugging Face, Whisper large-v3 (~7,4 % WER moyen) est
+désormais dépassé par plusieurs modèles open source plus récents.
+
+| Moteur | WER (≈) | Langues | Streaming live | Matériel | Docker prêt |
+|---|---|---|---|---|---|
+| **Qwen3-ASR-1.7B** | **4,9 % (FLEURS)** — SOTA open source | 30 langues dont FR | Oui (vLLM) | GPU NVIDIA requis | Oui (`qwenllm/qwen3-asr`, API OpenAI) |
+| **Parakeet-TDT-0.6B-v3** (NVIDIA) | 6,3 % | 25 langues EU dont FR | Oui, ultra-rapide (jusqu'à ~30× temps réel sur CPU) | CPU ou GPU | Oui (wrapper FastAPI OpenAI) |
+| **Canary-1B-v2** (NVIDIA) | ~7,2 %, 7-10× plus rapide que Whisper | ~25 langues | Partiel | GPU conseillé | Via NIM/NeMo |
+| **Voxtral-Mini-3B** (Mistral) | ~7,0 % | Jeu de langues restreint | Oui | GPU conseillé | Oui (vLLM) |
+| **Whisper large-v3 (faster-whisper)** | ~7,4 % | **99+ langues**, écosystème le plus mûr | Oui (WhisperLive, Speaches) | CPU ou GPU | Oui, nombreuses images |
+
+**Règle de choix pour LiveFlow :**
+- **GPU NVIDIA disponible** → **Qwen3-ASR-1.7B** : meilleure précision open
+  source, image Docker officielle, API compatible OpenAI, streaming.
+- **CPU uniquement** → **Parakeet-TDT-0.6B-v3** : plus précis ET plus rapide
+  que Whisper sur les langues européennes, temps réel confortable sur CPU.
+- **Filet de sécurité / compatibilité maximale** → faster-whisper via Speaches
+  (outillage live le plus éprouvé, 99+ langues).
+
+L'architecture P2 rend ce choix réversible : le moteur n'est qu'un conteneur
+derrière une API compatible OpenAI, on peut en changer en une ligne de compose.
+
+---
 
 **Recommandation : Proposition 2.** Elle reste « simple, efficace et
 puissante » : un compose de 3 services, l'interface fait tout
