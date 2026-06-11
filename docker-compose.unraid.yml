@@ -1,0 +1,56 @@
+# Compose adapté à Unraid (plugin "Docker Compose Manager").
+#
+# Prérequis :
+#   1. Plugin "Nvidia Driver" installé (Community Applications)
+#   2. Cloner ce dépôt dans /mnt/user/appdata/liveflow :
+#        cd /mnt/user/appdata && git clone -b claude/laughing-thompson-ci0zw1 <url-du-repo> liveflow
+#   3. Créer une stack Compose Manager pointant sur ce fichier
+#
+# Les ports 80/443 étant utilisés par l'interface Unraid, l'app est exposée
+# sur 8443 : ouvrir https://<ip-unraid>:8443 (accepter le certificat).
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: liveflow-caddy
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+      - "8443:443"
+    volumes:
+      - /mnt/user/appdata/liveflow/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /mnt/user/appdata/liveflow/caddy/data:/data
+      - /mnt/user/appdata/liveflow/caddy/config:/config
+    depends_on:
+      - app
+
+  app:
+    build: /mnt/user/appdata/liveflow/app
+    container_name: liveflow-app
+    restart: unless-stopped
+    environment:
+      - ASR_BASE_URL=http://asr:8000/v1
+      - ASR_MODEL=Qwen/Qwen3-ASR-1.7B
+      - ASR_API_KEY=sk-local
+      # Code langue ISO ("fr", "en"...) ou vide pour la détection automatique
+      - ASR_LANGUAGE=fr
+      - DB_PATH=/data/liveflow.db
+    volumes:
+      - /mnt/user/appdata/liveflow/data:/data
+    depends_on:
+      - asr
+
+  asr:
+    image: vllm/vllm-openai:latest
+    container_name: liveflow-asr
+    restart: unless-stopped
+    command: >-
+      --model Qwen/Qwen3-ASR-1.7B
+      --gpu-memory-utilization 0.70
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - /mnt/user/appdata/liveflow/hf-cache:/root/.cache/huggingface
+    ipc: host

@@ -45,6 +45,14 @@ cliquer sur **Démarrer**.
 > l'avertissement du navigateur, vous pouvez installer la CA racine de Caddy
 > sur vos appareils : `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt .`
 
+## Unraid
+
+Un compose dédié est fourni : [`docker-compose.unraid.yml`](docker-compose.unraid.yml)
+(chemins `appdata`, GPU via `runtime: nvidia`, ports 8088/8443 car 80/443 sont
+pris par l'interface Unraid). Prérequis : plugins **Nvidia Driver** et
+**Docker Compose Manager**. Cloner le dépôt dans `/mnt/user/appdata/liveflow`,
+créer une stack pointant sur ce fichier, puis ouvrir `https://<ip-unraid>:8443`.
+
 ## Configuration
 
 Variables d'environnement (fichier `.env` à la racine, voir `.env.example`) :
