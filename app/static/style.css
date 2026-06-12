@@ -109,6 +109,38 @@ button, .controls a {
 }
 button.record { background: var(--accent); font-weight: 600; min-width: 130px; }
 button.record.recording { background: var(--rec); }
+button.pause { background: var(--panel-2); font-weight: 600; }
+button.pause.paused { background: #2a2410; color: #ffd166; }
+button.pause.hidden { display: none; }
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toggle input { accent-color: var(--accent); }
+
+.speaker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  align-self: flex-start;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.speaker-0 { background: #1d3a5f; color: #7cb8ff; }
+.speaker-1 { background: #1f4a2c; color: #6fdc8c; }
+.speaker-2 { background: #4a2a1f; color: #ffab70; }
+.speaker-3 { background: #3d1f4a; color: #d8a6ff; }
+.speaker-4 { background: #4a1f2e; color: #ff9bb3; }
+.speaker-5 { background: #1f4a47; color: #6fd9d2; }
+.speaker-6 { background: #4a431f; color: #e3d56f; }
+.speaker-7 { background: #2e2e4a; color: #a3a8ff; }
 #timer { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 48px; }
 
 #vu {

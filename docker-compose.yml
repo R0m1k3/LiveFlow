@@ -15,6 +15,9 @@ services:
       - ASR_API_KEY=${ASR_API_KEY:-sk-local}
       # Code langue ISO ("fr", "en"...) ou vide pour la détection automatique
       - ASR_LANGUAGE=${ASR_LANGUAGE:-}
+      # Identification des locuteurs (Locuteur 1, 2...) — modèle CPU léger
+      - DIARIZATION=${DIARIZATION:-on}
+      - DIARIZATION_MAX_SPEAKERS=${DIARIZATION_MAX_SPEAKERS:-8}
       - DB_PATH=/data/liveflow.db
     volumes:
       - liveflow-data:/data

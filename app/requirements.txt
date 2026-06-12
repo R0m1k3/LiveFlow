@@ -3,3 +3,6 @@ uvicorn[standard]~=0.34
 httpx~=0.28
 aiosqlite~=0.21
 webrtcvad-wheels~=2.0
+speechbrain>=1.0
+torch>=2.0,<3.0
+torchaudio>=2.0,<3.0

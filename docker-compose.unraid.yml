@@ -31,6 +31,10 @@ services:
       - ASR_API_KEY=sk-local
       # Code langue ISO ("fr", "en"...) ou vide pour la détection automatique
       - ASR_LANGUAGE=fr
+      # Identification des locuteurs (Locuteur 1, 2...) — modèle CPU léger,
+      # téléchargé au premier démarrage dans data/models
+      - DIARIZATION=on
+      - DIARIZATION_MAX_SPEAKERS=8
       - DB_PATH=/data/liveflow.db
     volumes:
       - /mnt/user/appdata/liveflow/data:/data

@@ -16,7 +16,17 @@ const state = {
   sourceNode: null,
   autoMicQueue: null,
   switching: false,
+  paused: false,
 };
+
+// couleurs des étiquettes de locuteurs (classes .speaker-0 à .speaker-7)
+const speakerColors = {};
+function speakerColorIndex(speaker) {
+  if (!(speaker in speakerColors)) {
+    speakerColors[speaker] = Object.keys(speakerColors).length % 8;
+  }
+  return speakerColors[speaker];
+}
 
 const BATCH_SAMPLES = 4096; // ~256 ms de PCM 16 kHz par message WebSocket
 
@@ -124,7 +134,11 @@ async function startRecording() {
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   state.ws = new WebSocket(`${proto}://${location.host}/ws`);
-  state.ws.onopen = () => state.ws.send(JSON.stringify({ type: 'start', title: $('title').value }));
+  state.ws.onopen = () => state.ws.send(JSON.stringify({
+    type: 'start',
+    title: $('title').value,
+    diarization: $('diarization-cb').checked,
+  }));
   state.ws.onmessage = onServerMessage;
   state.ws.onclose = (e) => {
     if (e.code === 4401) { location.href = '/login'; return; }
@@ -142,6 +156,7 @@ async function startRecording() {
   listMics();
 
   state.recording = true;
+  state.paused = false;
   state.startedAt = Date.now();
   state.lastLoudAt = Date.now();
   state.silentWarned = false;
@@ -149,12 +164,18 @@ async function startRecording() {
   state.timerInterval = setInterval(updateTimer, 500);
   $('record-btn').textContent = '■ Arrêter';
   $('record-btn').classList.add('recording');
+  $('pause-btn').classList.remove('hidden', 'paused');
+  $('pause-btn').textContent = '⏸ Pause';
   $('title').disabled = true;
   setStatus('rec', 'Enregistrement…');
   clearTranscript();
 }
 
 function queuePcm(samples) {
+  if (state.paused) {
+    state.lastLoudAt = Date.now(); // pas de chasse au micro pendant la pause
+    return;
+  }
   updateVu(samples);
   if (!state.recording || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   state.sendBuffer.push(samples);
@@ -200,8 +221,30 @@ function stopRecording(abrupt = false) {
 
   $('record-btn').textContent = '● Démarrer';
   $('record-btn').classList.remove('recording');
+  $('pause-btn').classList.add('hidden');
+  state.paused = false;
   $('title').disabled = false;
   $('vu-bar').style.width = '0%';
+}
+
+function togglePause() {
+  if (!state.recording || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  state.paused = !state.paused;
+  const btn = $('pause-btn');
+  if (state.paused) {
+    flushPcm();
+    state.ws.send(JSON.stringify({ type: 'pause' }));
+    btn.textContent = '▶ Reprendre';
+    btn.classList.add('paused');
+    setStatus('busy', 'En pause');
+    $('vu-bar').style.width = '0%';
+  } else {
+    state.ws.send(JSON.stringify({ type: 'resume' }));
+    state.lastLoudAt = Date.now();
+    btn.textContent = '⏸ Pause';
+    btn.classList.remove('paused');
+    setStatus('rec', 'Enregistrement…');
+  }
 }
 
 function onServerMessage(event) {
@@ -238,7 +281,7 @@ function updateTimer() {
     String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 
   // micro muet depuis 5 s : on essaie automatiquement les autres micros
-  if (!state.recording) return;
+  if (!state.recording || state.paused) return;
   const silent = Date.now() - state.lastLoudAt > 5000;
   if (silent) {
     state.silentWarned = true;
@@ -270,7 +313,12 @@ function clearTranscript() {
 function appendSegment(seg) {
   const div = document.createElement('div');
   div.className = 'segment';
-  div.innerHTML = `<span class="ts">${fmtTs(seg.t0)}</span><span class="text"></span>`;
+  let speakerHtml = '';
+  if (seg.speaker) {
+    speakerHtml = `<span class="speaker speaker-${speakerColorIndex(seg.speaker)}"></span>`;
+  }
+  div.innerHTML = `<span class="ts">${fmtTs(seg.t0)}</span>${speakerHtml}<span class="text"></span>`;
+  if (seg.speaker) div.querySelector('.speaker').textContent = seg.speaker;
   div.querySelector('.text').textContent = seg.text;
   $('transcript').appendChild(div);
   $('transcript').scrollTop = $('transcript').scrollHeight;
@@ -328,8 +376,12 @@ async function deleteCurrentMeeting() {
 }
 
 async function copyTranscript() {
-  const text = [...document.querySelectorAll('#transcript .segment .text')]
-    .map((el) => el.textContent).join('\n');
+  const text = [...document.querySelectorAll('#transcript .segment')]
+    .map((el) => {
+      const speaker = el.querySelector('.speaker');
+      const t = el.querySelector('.text').textContent;
+      return speaker ? `[${speaker.textContent}] ${t}` : t;
+    }).join('\n');
   await navigator.clipboard.writeText(text);
   $('copy-btn').textContent = '✓ Copié';
   setTimeout(() => ($('copy-btn').textContent = '📋 Copier'), 1500);
@@ -338,6 +390,7 @@ async function copyTranscript() {
 // --------------------------------------------------------------------- init
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
+$('pause-btn').onclick = togglePause;
 $('logout-btn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; };
 $('mic-select').onchange = async () => {
   const id = $('mic-select').value;

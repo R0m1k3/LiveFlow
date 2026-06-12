@@ -27,8 +27,12 @@
           <option value="">Micro par défaut</option>
         </select>
         <button id="record-btn" class="record">● Démarrer</button>
+        <button id="pause-btn" class="pause hidden">⏸ Pause</button>
         <span id="timer">00:00</span>
         <div id="vu" title="Niveau du micro"><div id="vu-bar"></div></div>
+        <label id="diarization-toggle" class="toggle" title="Identifier qui parle (Locuteur 1, 2...)">
+          <input type="checkbox" id="diarization-cb" checked> Locuteurs
+        </label>
       </section>
 
       <section id="transcript-panel">

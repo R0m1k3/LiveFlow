@@ -7,7 +7,9 @@ RUN apt-get update \
 WORKDIR /srv
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# PyTorch CPU-only pour la diarisation (~200 Mo au lieu de ~2 Go avec CUDA)
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN chmod +x entrypoint.sh

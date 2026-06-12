@@ -66,6 +66,18 @@ docker compose -f docker-compose.unraid.yml up -d app
 > Première utilisation : le paquet ghcr.io doit être **public** (GitHub →
 > page du dépôt → Packages → liveflow → Package settings → Change visibility).
 
+## Diarisation (qui parle ?)
+
+Avec `DIARIZATION=on` (par défaut), chaque segment est attribué à un locuteur
+(« Locuteur 1 », « Locuteur 2 »...) par empreinte vocale (ECAPA-TDNN sur CPU,
+modèle ~80 Mo téléchargé au premier démarrage dans `data/models`). Les
+locuteurs apparaissent dans l'interface et les exports. Réglages :
+`DIARIZATION_MAX_SPEAKERS` (défaut 8) et `DIARIZATION_THRESHOLD` (défaut 0.70,
+baisser si deux personnes sont confondues, monter si une personne est coupée
+en deux). La case « Locuteurs » de l'interface permet de désactiver la
+diarisation pour une réunion donnée. Pendant l'enregistrement, le bouton
+**⏸ Pause** suspend la capture sans clore la réunion.
+
 ## Authentification
 
 L'interface est protégée par un identifiant/mot de passe (**admin / admin**
