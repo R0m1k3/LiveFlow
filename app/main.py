@@ -1,4 +1,5 @@
 import asyncio
+import audioop
 import hashlib
 import hmac
 import io
@@ -153,6 +154,21 @@ def pcm_to_wav(pcm: bytes) -> bytes:
     return buf.getvalue()
 
 
+QUIET_PEAK = 9000  # niveau crête en dessous duquel on amplifie (échelle int16)
+
+
+def boost_quiet_audio(pcm: bytes) -> tuple[bytes, int]:
+    """Amplifie les segments trop faibles (micros Bluetooth mains-libres...).
+
+    Retourne (audio, niveau crête d'origine).
+    """
+    peak = audioop.max(pcm, 2)
+    if 0 < peak < QUIET_PEAK:
+        factor = min(6.0, 26000 / peak)
+        return audioop.mul(pcm, 2, factor), peak
+    return pcm, peak
+
+
 async def _post_transcription(data: dict, wav: bytes) -> httpx.Response:
     return await http.post(
         f"{ASR_BASE_URL}/audio/transcriptions",
@@ -215,10 +231,12 @@ async def ws_transcribe(ws: WebSocket):
             seg = await queue.get()
             if seg is None:
                 return
+            pcm, peak = boost_quiet_audio(seg.pcm)
             print(f"[réunion {meeting_id}] segment {seg.t0:.1f}s → {seg.t1:.1f}s "
-                  f"({len(seg.pcm) / 2 / SAMPLE_RATE:.1f}s d'audio), transcription...", flush=True)
+                  f"({len(seg.pcm) / 2 / SAMPLE_RATE:.1f}s d'audio, niveau crête {peak}"
+                  f"{', amplifié' if pcm is not seg.pcm else ''}), transcription...", flush=True)
             try:
-                text = await transcribe(seg.pcm)
+                text = await transcribe(pcm)
             except Exception as exc:
                 print(f"[réunion {meeting_id}] ERREUR ASR : {exc}", flush=True)
                 await ws.send_json({"type": "error", "message": f"Transcription échouée : {exc}"})
@@ -350,4 +368,13 @@ async def export_meeting(meeting_id: int, format: str = "txt"):
     )
 
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+class NoCacheStaticFiles(StaticFiles):
+    """Force la revalidation des fichiers statiques après chaque mise à jour."""
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+app.mount("/", NoCacheStaticFiles(directory="static", html=True), name="static")
