@@ -13,8 +13,8 @@ services:
       # Code langue ISO ("fr", "en"...) ou vide pour la détection automatique
       - ASR_LANGUAGE=${ASR_LANGUAGE:-fr}
       - DB_PATH=/data/liveflow.db
-      # Diarisation des locuteurs (off par défaut pour rétrocompatibilité)
-      - DIARIZATION=${DIARIZATION:-off}
+      # Diarisation des locuteurs
+      - DIARIZATION=${DIARIZATION:-on}
       - DIARIZATION_THRESHOLD=${DIARIZATION_THRESHOLD:-0.70}
       - DIARIZATION_MAX_SPEAKERS=${DIARIZATION_MAX_SPEAKERS:-8}
     volumes:
