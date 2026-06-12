@@ -59,6 +59,8 @@ async function startRecording() {
 
   try {
     state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    // Rafraîchir les étiquettes des micros une fois la permission accordée
+    await populateMicList();
   } catch (err) {
     const causes = {
       NotAllowedError: "Permission refusée. Autorisez le micro pour ce site (icône à gauche de l'adresse), et vérifiez que la page est servie en HTTPS.",
