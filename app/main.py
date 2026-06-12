@@ -67,17 +67,30 @@ def pcm_to_wav(pcm: bytes) -> bytes:
     return buf.getvalue()
 
 
-async def transcribe(pcm: bytes) -> str:
-    data = {"model": ASR_MODEL}
-    if ASR_LANGUAGE:
-        data["language"] = ASR_LANGUAGE
-    resp = await http.post(
+async def _post_transcription(data: dict, wav: bytes) -> httpx.Response:
+    return await http.post(
         f"{ASR_BASE_URL}/audio/transcriptions",
         headers={"Authorization": f"Bearer {ASR_API_KEY}"},
         data=data,
-        files={"file": ("segment.wav", pcm_to_wav(pcm), "audio/wav")},
+        files={"file": ("segment.wav", wav, "audio/wav")},
     )
-    resp.raise_for_status()
+
+
+async def transcribe(pcm: bytes) -> str:
+    wav = pcm_to_wav(pcm)
+    data = {"model": ASR_MODEL}
+    if ASR_LANGUAGE:
+        data["language"] = ASR_LANGUAGE
+    resp = await _post_transcription(data, wav)
+    if resp.status_code == 400 and "language" in data:
+        # Certains moteurs (ex. Qwen3-ASR via vLLM) rejettent le paramètre
+        # language : on retente en laissant la détection automatique.
+        print(f"ASR a refusé language={ASR_LANGUAGE!r} ({resp.text[:200]}), "
+              "nouvel essai sans ce paramètre", flush=True)
+        del data["language"]
+        resp = await _post_transcription(data, wav)
+    if resp.status_code != 200:
+        raise RuntimeError(f"ASR HTTP {resp.status_code} : {resp.text[:300]}")
     return resp.json().get("text", "").strip()
 
 
