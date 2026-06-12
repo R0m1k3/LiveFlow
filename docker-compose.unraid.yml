@@ -16,7 +16,9 @@ services:
     container_name: liveflow-app
     restart: unless-stopped
     ports:
-      - "8443:8000"
+      # Lié à l'IP locale : joignable depuis le LAN et le reverse proxy,
+      # mais pas directement depuis internet (stoppe le bruit des scanners).
+      - "192.168.1.16:8443:8000"
     environment:
       # ← IP (ou nom d'hôte) de votre serveur Unraid, pour le certificat HTTPS
       - LIVEFLOW_HOST=192.168.1.16
