@@ -343,8 +343,7 @@ async def export_meeting(meeting_id: int, format: str = "txt"):
             return f"[{s['speaker']}] {s['text']}" if s.get("speaker") else s["text"]
         body, mime, ext = "\n".join(_txt_line(s) for s in segs) + "\n", "text/plain", "txt"
     else:
-        raise HTTPException(400, "Format inconnu (txt, md, srt, json)
-")
+        raise HTTPException(400, "Format inconnu (txt, md, srt, json)")
 
     return Response(
         content=body,
