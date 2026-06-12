@@ -23,6 +23,7 @@ services:
     restart: unless-stopped
     command: >-
       --model Qwen/Qwen3-ASR-1.7B
+      --max-model-len 8192
       --gpu-memory-utilization 0.70
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
