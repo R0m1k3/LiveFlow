@@ -1,17 +1,18 @@
 # Compose adapté à Unraid (plugin "Docker Compose Manager").
 #
-# Prérequis :
-#   1. Plugin "Nvidia Driver" installé (Community Applications)
-#   2. Le dépôt extrait dans /mnt/user/appdata/liveflow
-#   3. Une stack Compose Manager pointant sur ce fichier
+# Prérequis : plugin "Nvidia Driver" (Community Applications).
 #
-# L'app sert directement le HTTPS avec un certificat auto-signé (requis par
-# les navigateurs pour autoriser le micro) : ouvrir https://<ip-unraid>:8443
-# et accepter l'avertissement de certificat.
+# L'image de l'app est construite et publiée automatiquement par GitHub
+# Actions à chaque mise à jour du code : plus besoin du dépôt sur le serveur.
+# Le service watchtower inclus met à jour l'app automatiquement (il ne touche
+# qu'aux conteneurs portant le label watchtower.enable).
+#
+# Accès : https://<ip-unraid>:8443 (certificat auto-signé), ou via votre
+# reverse proxy avec LIVEFLOW_TLS=off (scheme http, websockets activés).
 
 services:
   app:
-    build: /mnt/user/appdata/liveflow/app
+    image: ghcr.io/r0m1k3/liveflow:latest
     container_name: liveflow-app
     restart: unless-stopped
     ports:
@@ -21,7 +22,7 @@ services:
       - LIVEFLOW_HOST=192.168.1.16
       # "off" si un reverse proxy (Nginx Proxy Manager, SWAG...) gère déjà le
       # HTTPS : l'app sert alors du HTTP simple sur le port 8443.
-      - LIVEFLOW_TLS=on
+      - LIVEFLOW_TLS=off
       - ASR_BASE_URL=http://asr:8000/v1
       - ASR_MODEL=Qwen/Qwen3-ASR-1.7B
       - ASR_API_KEY=sk-local
@@ -30,6 +31,8 @@ services:
       - DB_PATH=/data/liveflow.db
     volumes:
       - /mnt/user/appdata/liveflow/data:/data
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     depends_on:
       - asr
 
@@ -48,3 +51,14 @@ services:
     volumes:
       - /mnt/user/appdata/liveflow/hf-cache:/root/.cache/huggingface
     ipc: host
+
+  # Met à jour automatiquement liveflow-app quand une nouvelle image est
+  # publiée (vérification toutes les heures). Supprimez ce service si un
+  # Watchtower tourne déjà sur votre serveur.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: liveflow-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --label-enable --cleanup --interval 3600

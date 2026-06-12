@@ -48,11 +48,26 @@ cliquer sur **Démarrer**.
 ## Unraid
 
 Un compose dédié est fourni : [`docker-compose.unraid.yml`](docker-compose.unraid.yml)
-(chemins `appdata`, GPU via `runtime: nvidia`, port 8443). Prérequis : plugins
-**Nvidia Driver** et **Docker Compose Manager**. Extraire le dépôt dans
-`/mnt/user/appdata/liveflow`, renseigner `LIVEFLOW_HOST` (IP du serveur) dans
-le compose, créer une stack pointant sur ce fichier, puis ouvrir
-`https://<ip-unraid>:8443`.
+(image préconstruite `ghcr.io/r0m1k3/liveflow`, GPU via `runtime: nvidia`,
+port 8443). Prérequis : plugins **Nvidia Driver** et **Docker Compose Manager**.
+Renseigner `LIVEFLOW_HOST` (IP du serveur) dans le compose, créer une stack
+pointant sur ce fichier, puis ouvrir `https://<ip-unraid>:8443`.
+
+## Mises à jour automatiques
+
+À chaque push sur GitHub, une GitHub Action construit l'image de l'app et la
+publie sur `ghcr.io/r0m1k3/liveflow:latest`. Le service **watchtower** inclus
+dans le compose Unraid vérifie le registre toutes les heures et redéploie
+automatiquement l'app quand une nouvelle image existe — aucune mise à jour
+manuelle. Pour forcer une mise à jour immédiate :
+
+```bash
+docker compose -f docker-compose.unraid.yml pull app && \
+docker compose -f docker-compose.unraid.yml up -d app
+```
+
+> Première utilisation : le paquet ghcr.io doit être **public** (GitHub →
+> page du dépôt → Packages → liveflow → Package settings → Change visibility).
 
 ## Configuration
 
