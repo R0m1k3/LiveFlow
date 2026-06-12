@@ -41,13 +41,14 @@ services:
     # L'image officielle vLLM n'embarque pas les décodeurs audio (soundfile,
     # librosa) : on les installe au démarrage avant de lancer le serveur.
     entrypoint: ["/bin/bash", "-c"]
-    command: >-
-      echo '--- LiveFlow : installation des décodeurs audio (soundfile, librosa) ---' &&
-      pip install -q soundfile librosa &&
-      echo '--- LiveFlow : décodeurs installés, démarrage de vLLM ---' &&
-      exec vllm serve Qwen/Qwen3-ASR-1.7B
-      --max-model-len 8192
-      --gpu-memory-utilization 0.70
+    command:
+      - >-
+        echo '--- LiveFlow : installation des décodeurs audio (soundfile, librosa) ---' &&
+        pip install -q soundfile librosa &&
+        echo '--- LiveFlow : décodeurs installés, démarrage de vLLM ---' &&
+        exec vllm serve Qwen/Qwen3-ASR-1.7B
+        --max-model-len 8192
+        --gpu-memory-utilization 0.70
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
