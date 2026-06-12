@@ -92,6 +92,21 @@ button.record { background: var(--accent); font-weight: 600; min-width: 130px; }
 button.record.recording { background: var(--rec); }
 #timer { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 48px; }
 
+#vu {
+  width: 70px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+#vu-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3dd68c, #ffd166 70%, #e5484d);
+  transition: width 80ms linear;
+}
+
 #transcript-panel {
   flex: 1;
   display: flex;

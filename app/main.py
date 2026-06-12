@@ -126,11 +126,15 @@ async def ws_transcribe(ws: WebSocket):
             seg = await queue.get()
             if seg is None:
                 return
+            print(f"[réunion {meeting_id}] segment {seg.t0:.1f}s → {seg.t1:.1f}s "
+                  f"({len(seg.pcm) / 2 / SAMPLE_RATE:.1f}s d'audio), transcription...", flush=True)
             try:
                 text = await transcribe(seg.pcm)
             except Exception as exc:
+                print(f"[réunion {meeting_id}] ERREUR ASR : {exc}", flush=True)
                 await ws.send_json({"type": "error", "message": f"Transcription échouée : {exc}"})
                 continue
+            print(f"[réunion {meeting_id}] texte : {text[:80]!r}", flush=True)
             if not text:
                 continue
             await db.execute(

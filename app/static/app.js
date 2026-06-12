@@ -63,10 +63,20 @@ async function startRecording() {
 }
 
 function queuePcm(samples) {
+  updateVu(samples);
   if (!state.recording || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   state.sendBuffer.push(samples);
   state.sendBufferSamples += samples.length;
   if (state.sendBufferSamples >= BATCH_SAMPLES) flushPcm();
+}
+
+function updateVu(samples) {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i += 4) {
+    const v = Math.abs(samples[i]);
+    if (v > peak) peak = v;
+  }
+  $('vu-bar').style.width = Math.min(100, (peak / 32768) * 140) + '%';
 }
 
 function flushPcm() {
@@ -97,6 +107,7 @@ function stopRecording(abrupt = false) {
   $('record-btn').textContent = '● Démarrer';
   $('record-btn').classList.remove('recording');
   $('title').disabled = false;
+  $('vu-bar').style.width = '0%';
 }
 
 function onServerMessage(event) {
