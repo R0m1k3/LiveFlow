@@ -42,6 +42,9 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - Création d'un indicateur visuel de volume micro en temps réel calculé par RMS.
 - Intégration d'un système de capture d'erreurs JavaScript globales affichées à l'écran pour le diagnostic.
 - Ajout de paramètres de version (cache-busting ?v=2) dans index.html pour forcer le rechargement de style.css et app.js par le navigateur.
+- Implémentation du bouton Pause/Reprendre (arrêt du timer, arrêt de l'envoi de l'audio PCM, finalisation du segment en cours).
+- Résolution du problème d'apparition des sigles chinois (caractères asiatiques hallucinés) en forçant par défaut le français (ASR_LANGUAGE=fr).
+- Commit et push de l'ensemble des modifications.
 
 
 
