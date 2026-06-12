@@ -22,15 +22,21 @@ async function startRecording() {
     state.mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-  } catch (err) {
-    const causes = {
-      NotAllowedError: "Permission refusée. Autorisez le micro pour ce site (icône à gauche de l'adresse), et vérifiez que la page est servie en HTTPS.",
-      NotReadableError: "Le micro est inaccessible au niveau du système : fermez les applications qui l'utilisent (Teams, Discord...), vérifiez les paramètres de confidentialité micro de l'OS, et le périphérique d'entrée choisi par le navigateur.",
-      NotFoundError: "Aucun micro détecté. Branchez un micro ou choisissez le bon périphérique d'entrée.",
-      OverconstrainedError: "Le micro ne supporte pas les réglages demandés.",
-    };
-    alert("Impossible de démarrer le micro.\n\n" + (causes[err.name] || "") + "\n\n(" + err + ")");
-    return;
+  } catch (firstErr) {
+    // Certains pilotes échouent avec les options de traitement audio :
+    // on retente avec la contrainte minimale avant d'abandonner.
+    try {
+      state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      const causes = {
+        NotAllowedError: "Permission refusée. Autorisez le micro pour ce site (icône à gauche de l'adresse), et vérifiez que la page est servie en HTTPS.",
+        NotReadableError: "Le micro est inaccessible au niveau du système : fermez les autres onglets ou applications qui l'utilisent (Teams, Discord, autre onglet LiveFlow...), redémarrez le navigateur, et vérifiez les paramètres de confidentialité micro de l'OS.",
+        NotFoundError: "Aucun micro détecté. Branchez un micro ou choisissez le bon périphérique d'entrée.",
+        OverconstrainedError: "Le micro ne supporte pas les réglages demandés.",
+      };
+      alert("Impossible de démarrer le micro.\n\n" + (causes[err.name] || "") + "\n\n(" + err + ")");
+      return;
+    }
   }
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
