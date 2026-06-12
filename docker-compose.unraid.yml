@@ -3,9 +3,9 @@
 # Prérequis : plugin "Nvidia Driver" (Community Applications).
 #
 # L'image de l'app est construite et publiée automatiquement par GitHub
-# Actions à chaque mise à jour du code : plus besoin du dépôt sur le serveur.
-# Le service watchtower inclus met à jour l'app automatiquement (il ne touche
-# qu'aux conteneurs portant le label watchtower.enable).
+# Actions à chaque mise à jour du code. Pour mettre à jour :
+#   docker compose -f docker-compose.unraid.yml pull && \
+#   docker compose -f docker-compose.unraid.yml up -d
 #
 # Accès : https://<ip-unraid>:8443 (certificat auto-signé), ou via votre
 # reverse proxy avec LIVEFLOW_TLS=off (scheme http, websockets activés).
@@ -31,8 +31,6 @@ services:
       - DB_PATH=/data/liveflow.db
     volumes:
       - /mnt/user/appdata/liveflow/data:/data
-    labels:
-      - com.centurylinklabs.watchtower.enable=true
     depends_on:
       - asr
 
@@ -52,13 +50,3 @@ services:
       - /mnt/user/appdata/liveflow/hf-cache:/root/.cache/huggingface
     ipc: host
 
-  # Met à jour automatiquement liveflow-app quand une nouvelle image est
-  # publiée (vérification toutes les heures). Supprimez ce service si un
-  # Watchtower tourne déjà sur votre serveur.
-  watchtower:
-    image: containrrr/watchtower:latest
-    container_name: liveflow-watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --label-enable --cleanup --interval 3600

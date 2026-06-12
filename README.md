@@ -53,13 +53,10 @@ port 8443). Prérequis : plugins **Nvidia Driver** et **Docker Compose Manager**
 Renseigner `LIVEFLOW_HOST` (IP du serveur) dans le compose, créer une stack
 pointant sur ce fichier, puis ouvrir `https://<ip-unraid>:8443`.
 
-## Mises à jour automatiques
+## Mises à jour
 
 À chaque push sur GitHub, une GitHub Action construit l'image de l'app et la
-publie sur `ghcr.io/r0m1k3/liveflow:latest`. Le service **watchtower** inclus
-dans le compose Unraid vérifie le registre toutes les heures et redéploie
-automatiquement l'app quand une nouvelle image existe — aucune mise à jour
-manuelle. Pour forcer une mise à jour immédiate :
+publie sur `ghcr.io/r0m1k3/liveflow:latest`. Pour mettre à jour l'app :
 
 ```bash
 docker compose -f docker-compose.unraid.yml pull app && \
