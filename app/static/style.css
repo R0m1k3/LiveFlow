@@ -206,7 +206,17 @@ button.record.recording { background: var(--rec); }
   border-radius: 2px;
   transition: width 0.1s ease;
 }
-
+/* Bouton Pause */
+button.pause {
+  background: #2a2410;
+  color: #ffd166;
+  font-weight: 600;
+  min-width: 110px;
+}
+button.pause.paused {
+  background: var(--accent);
+  color: var(--text);
+}
 
 
 @media (max-width: 720px) {

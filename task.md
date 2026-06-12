@@ -22,7 +22,11 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - [x] Rendre configurable le nombre maximal de locuteurs (DIARIZATION_MAX_SPEAKERS, défaut 8) dans main.py, .env.example et docker-compose.yml
 - [x] Créer l'afficheur de volume micro en temps réel (visualiseur audio) dans index.html, style.css et app.js
 - [x] Mettre en place la capture et l'affichage des erreurs JS non gérées à l'écran pour faciliter le diagnostic
-
+- [x] Modifier `app/static/index.html` pour intégrer le bouton de pause
+- [x] Modifier `app/static/style.css` pour styliser le bouton de pause
+- [x] Modifier `app/static/app.js` pour gérer l'état de pause (timer, flux audio et boutons)
+- [x] Modifier `app/main.py` pour traiter les commandes WebSocket `pause` et `resume` (flush VAD)
+- [x] Résoudre le problème d'apparition des sigles chinois en forçant le français (ASR_LANGUAGE=fr) par défaut dans le code, le docker-compose et l'environnement.
 
 ## Progress Log
 - Création du module `diarizer.py` pour l'extraction des embeddings et le clustering.

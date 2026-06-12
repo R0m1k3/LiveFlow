@@ -35,6 +35,7 @@ if (window.isSecureContext === false) {
 
 const state = {
   recording: false,
+  paused: false,
   ws: null,
   audioContext: null,
   workletNode: null,
@@ -43,6 +44,8 @@ const state = {
   sendBufferSamples: 0,
   timerInterval: null,
   startedAt: null,
+  elapsedMs: 0,
+  lastTimerUpdate: null,
   currentMeetingId: null,
 };
 
@@ -141,11 +144,20 @@ async function startRecording() {
 
     // 4. Mettre à jour l'interface
     state.recording = true;
+    state.paused = false;
     state.startedAt = Date.now();
+    state.elapsedMs = 0;
+    state.lastTimerUpdate = Date.now();
     state.timerInterval = setInterval(updateTimer, 500);
+    
     if ($('record-btn')) {
       $('record-btn').textContent = '■ Arrêter';
       $('record-btn').classList.add('recording');
+    }
+    if ($('pause-btn')) {
+      $('pause-btn').classList.remove('hidden');
+      $('pause-btn').classList.remove('paused');
+      $('pause-btn').textContent = '⏸ Pause';
     }
     if ($('title')) $('title').disabled = true;
     setStatus('rec', 'Enregistrement…');
@@ -208,6 +220,10 @@ function stopRecording(abrupt = false) {
     $('record-btn').textContent = '● Démarrer';
     $('record-btn').classList.remove('recording');
   }
+  if ($('pause-btn')) {
+    $('pause-btn').classList.add('hidden');
+  }
+  state.paused = false;
   if ($('title')) $('title').disabled = false;
   
   const bar = $('volume-bar');
@@ -232,6 +248,7 @@ function updateVolumeIndicator(samples) {
 
 function queuePcm(samples) {
   if (!state.recording || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  if (state.paused) return;
   updateVolumeIndicator(samples);
   state.sendBuffer.push(samples);
   state.sendBufferSamples += samples.length;
@@ -277,7 +294,11 @@ function setStatus(cls, text) {
 }
 
 function updateTimer() {
-  const s = Math.floor((Date.now() - state.startedAt) / 1000);
+  if (state.paused) return;
+  const now = Date.now();
+  state.elapsedMs += now - state.lastTimerUpdate;
+  state.lastTimerUpdate = now;
+  const s = Math.floor(state.elapsedMs / 1000);
   $('timer').textContent =
     String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 }
@@ -372,9 +393,40 @@ async function copyTranscript() {
   setTimeout(() => ($('copy-btn').textContent = '📋 Copier'), 1500);
 }
 
+function togglePause() {
+  if (!state.recording || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  
+  const btn = $('pause-btn');
+  if (!state.paused) {
+    // Mettre en pause
+    state.paused = true;
+    state.elapsedMs += Date.now() - state.lastTimerUpdate;
+    try { state.ws.send(JSON.stringify({ type: 'pause' })); } catch (e) {}
+    setStatus('busy', 'Pause'); // Indicateur visuel "Pause"
+    if (btn) {
+      btn.textContent = '▶ Reprendre';
+      btn.classList.add('paused');
+    }
+    // Remettre la barre de volume à 0% pendant la pause
+    const bar = $('volume-bar');
+    if (bar) bar.style.width = '0%';
+  } else {
+    // Reprendre
+    state.paused = false;
+    state.lastTimerUpdate = Date.now();
+    try { state.ws.send(JSON.stringify({ type: 'resume' })); } catch (e) {}
+    setStatus('rec', 'Enregistrement…');
+    if (btn) {
+      btn.textContent = '⏸ Pause';
+      btn.classList.remove('paused');
+    }
+  }
+}
+
 // --------------------------------------------------------------------- init
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
+if ($('pause-btn')) $('pause-btn').onclick = togglePause;
 $('copy-btn').onclick = copyTranscript;
 $('delete-btn').onclick = deleteCurrentMeeting;
 loadMeetings();

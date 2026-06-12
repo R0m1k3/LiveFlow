@@ -18,7 +18,7 @@ DB_PATH = os.environ.get("DB_PATH", "/data/liveflow.db")
 ASR_BASE_URL = os.environ.get("ASR_BASE_URL", "http://asr:8000/v1").rstrip("/")
 ASR_MODEL = os.environ.get("ASR_MODEL", "Qwen/Qwen3-ASR-1.7B")
 ASR_API_KEY = os.environ.get("ASR_API_KEY", "sk-local")
-ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip()
+ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip() or "fr"
 DIARIZATION = os.environ.get("DIARIZATION", "off").strip().lower() == "on"
 DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.70"))
 DIARIZATION_MAX_SPEAKERS = int(os.environ.get("DIARIZATION_MAX_SPEAKERS", "8"))
@@ -197,7 +197,8 @@ async def ws_transcribe(ws: WebSocket):
                     queue.put_nowait(seg)
             elif msg.get("text"):
                 control = json.loads(msg["text"])
-                if control.get("type") == "stop":
+                cmd = control.get("type")
+                if cmd == "stop":
                     if (last := segmenter.flush()) is not None:
                         queue.put_nowait(last)
                     queue.put_nowait(None)
@@ -205,6 +206,12 @@ async def ws_transcribe(ws: WebSocket):
                     worker_task = None
                     await ws.send_json({"type": "done", "meeting_id": meeting_id})
                     break
+                elif cmd == "pause":
+                    # Mettre en pause : forcer la finalisation du segment audio en cours
+                    if (last := segmenter.flush()) is not None:
+                        queue.put_nowait(last)
+                elif cmd == "resume":
+                    pass
     except WebSocketDisconnect:
         pass
     finally:
