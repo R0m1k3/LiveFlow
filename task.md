@@ -37,5 +37,7 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - Sécurisation globale de startRecording() et stopRecording() (bloc try/catch global, nettoyage complet et guards pour éléments null) et changement de contrainte de micro de 'exact' à 'ideal' pour éviter de bloquer la captation.
 - Création d'un indicateur visuel de volume micro en temps réel calculé par RMS.
 - Intégration d'un système de capture d'erreurs JavaScript globales affichées à l'écran pour le diagnostic.
+- Ajout de paramètres de version (cache-busting ?v=2) dans index.html pour forcer le rechargement de style.css et app.js par le navigateur.
+
 
 
