@@ -21,8 +21,12 @@ services:
   asr:
     image: vllm/vllm-openai:latest
     restart: unless-stopped
+    # L'image officielle vLLM n'embarque pas les décodeurs audio (soundfile,
+    # librosa) : on les installe au démarrage avant de lancer le serveur.
+    entrypoint: ["/bin/bash", "-c"]
     command: >-
-      --model Qwen/Qwen3-ASR-1.7B
+      pip install -q soundfile librosa &&
+      exec vllm serve Qwen/Qwen3-ASR-1.7B
       --max-model-len 8192
       --gpu-memory-utilization 0.70
     environment:
