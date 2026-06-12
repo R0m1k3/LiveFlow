@@ -19,6 +19,8 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - [x] Modifier `docker-compose.yml` — passer les variables d'environnement de diarisation
 - [x] Vérification de la cohérence de tous les fichiers et validation
 - [x] Correction de tout bug ou problème détecté
+- [x] Rendre configurable le nombre maximal de locuteurs (DIARIZATION_MAX_SPEAKERS, défaut 8) dans main.py, .env.example et docker-compose.yml
+
 
 ## Progress Log
 - Création du module `diarizer.py` pour l'extraction des embeddings et le clustering.
@@ -28,3 +30,4 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - Validation et commit des modifications pour le sélecteur de micro et la diarisation.
 - Amélioration du frontend pour rafraîchir les noms des micros après autorisation d'accès, commit et push sur main.
 - Correction de l'affichage de la liste des micros : demande initiale d'autorisation au chargement de la page et filtrage des périphériques sans identifiant.
+- Ajout de la variable d'environnement DIARIZATION_MAX_SPEAKERS (défaut 8) et intégration dans l'instanciation de SpeakerDiarizer.

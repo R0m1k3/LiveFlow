@@ -21,6 +21,7 @@ ASR_API_KEY = os.environ.get("ASR_API_KEY", "sk-local")
 ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip()
 DIARIZATION = os.environ.get("DIARIZATION", "off").strip().lower() == "on"
 DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.70"))
+DIARIZATION_MAX_SPEAKERS = int(os.environ.get("DIARIZATION_MAX_SPEAKERS", "8"))
 
 db: aiosqlite.Connection | None = None
 http: httpx.AsyncClient | None = None
@@ -149,6 +150,7 @@ async def ws_transcribe(ws: WebSocket):
             diarizer = SpeakerDiarizer(
                 model=embedding_model,
                 threshold=DIARIZATION_THRESHOLD,
+                max_speakers=DIARIZATION_MAX_SPEAKERS,
             )
 
         while True:
