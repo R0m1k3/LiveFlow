@@ -27,3 +27,4 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - Développement du frontend (styles, boutons, sélecteur de micro, badges).
 - Validation et commit des modifications pour le sélecteur de micro et la diarisation.
 - Amélioration du frontend pour rafraîchir les noms des micros après autorisation d'accès, commit et push sur main.
+- Correction de l'affichage de la liste des micros : demande initiale d'autorisation au chargement de la page et filtrage des périphériques sans identifiant.

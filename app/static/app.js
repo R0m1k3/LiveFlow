@@ -32,6 +32,9 @@ function getSpeakerColorIndex(speaker) {
 
 async function populateMicList() {
   const sel = $('mic-select');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+    return;
+  }
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const mics = devices.filter((d) => d.kind === 'audioinput');
@@ -39,6 +42,7 @@ async function populateMicList() {
     const current = sel.value;
     sel.innerHTML = '<option value="">Micro par défaut</option>';
     for (const mic of mics) {
+      if (!mic.deviceId) continue; // Ignorer les périphériques sans ID (permission non accordée)
       const opt = document.createElement('option');
       opt.value = mic.deviceId;
       opt.textContent = mic.label || `Micro ${sel.options.length}`;
@@ -267,6 +271,22 @@ $('copy-btn').onclick = copyTranscript;
 $('delete-btn').onclick = deleteCurrentMeeting;
 loadMeetings();
 
-// Peupler la liste des micros au chargement (et quand un périphérique change)
-populateMicList();
+// Peupler la liste des micros au chargement et demander la permission si nécessaire
+async function initMics() {
+  await populateMicList();
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      // Demander l'accès au micro temporairement pour obtenir les autorisations et les noms réels
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Relâcher immédiatement le micro pour éteindre le témoin d'enregistrement
+      stream.getTracks().forEach((t) => t.stop());
+      // Re-peupler la liste maintenant que la permission est acquise
+      await populateMicList();
+    } catch (err) {
+      console.log('Permission initiale micro refusée ou non disponible :', err);
+    }
+  }
+}
+
+initMics();
 navigator.mediaDevices?.addEventListener('devicechange', populateMicList);
