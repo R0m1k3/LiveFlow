@@ -1,5 +1,13 @@
 const $ = (id) => document.getElementById(id);
 
+// Vérification du contexte sécurisé (requis pour le micro et les périphériques)
+if (window.isSecureContext === false) {
+  const warning = document.createElement('div');
+  warning.style.cssText = 'background: #3a181a; color: #ff8589; padding: 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #e5484d; font-size: 0.9rem; z-index: 9999; position: relative;';
+  warning.innerHTML = '⚠️ Contexte non sécurisé (HTTP) détecté. Le navigateur bloquera l\'accès au micro. Veuillez utiliser HTTPS (https://...) ou localhost.';
+  document.body.insertBefore(warning, document.body.firstChild);
+}
+
 const state = {
   recording: false,
   ws: null,
@@ -84,7 +92,19 @@ async function startRecording() {
     diarization: $('diarization-cb').checked,
   }));
   state.ws.onmessage = onServerMessage;
-  state.ws.onclose = () => { if (state.recording) stopRecording(true); };
+  state.ws.onerror = (err) => {
+    console.error('Erreur WebSocket :', err);
+    setStatus('error', 'Erreur Connexion');
+  };
+  state.ws.onclose = (e) => {
+    console.log(`WebSocket fermé : code=${e.code}, raison=${e.reason}`);
+    if (state.recording) {
+      stopRecording(true);
+      if (e.code !== 1000 && e.code !== 1001) {
+        setStatus('error', `Déconnexion (${e.code})`);
+      }
+    }
+  };
 
   state.audioContext = new AudioContext();
   await state.audioContext.audioWorklet.addModule('worklet.js');
@@ -138,6 +158,9 @@ function stopRecording(abrupt = false) {
   $('record-btn').textContent = '● Démarrer';
   $('record-btn').classList.remove('recording');
   $('title').disabled = false;
+  
+  // Toujours recharger les réunions pour synchroniser la liste (cas d'arrêt abrupt ou échec)
+  loadMeetings();
 }
 
 function onServerMessage(event) {
