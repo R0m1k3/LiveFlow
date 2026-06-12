@@ -28,13 +28,37 @@ function getSpeakerColorIndex(speaker) {
   return speakerMap[speaker];
 }
 
+// --------------------------------------------------------- sélection micro
+
+async function populateMicList() {
+  const sel = $('mic-select');
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter((d) => d.kind === 'audioinput');
+    // Garder la sélection courante si possible
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Micro par défaut</option>';
+    for (const mic of mics) {
+      const opt = document.createElement('option');
+      opt.value = mic.deviceId;
+      opt.textContent = mic.label || `Micro ${sel.options.length}`;
+      sel.appendChild(opt);
+    }
+    if (current) sel.value = current;
+  } catch (err) {
+    console.warn('Impossible d\'énumérer les micros :', err);
+  }
+}
+
 // ----------------------------------------------------------- enregistrement
 
 async function startRecording() {
+  const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  const selectedMic = $('mic-select').value;
+  if (selectedMic) audioConstraints.deviceId = { exact: selectedMic };
+
   try {
-    state.mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
   } catch (err) {
     const causes = {
       NotAllowedError: "Permission refusée. Autorisez le micro pour ce site (icône à gauche de l'adresse), et vérifiez que la page est servie en HTTPS.",
@@ -240,3 +264,7 @@ $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecord
 $('copy-btn').onclick = copyTranscript;
 $('delete-btn').onclick = deleteCurrentMeeting;
 loadMeetings();
+
+// Peupler la liste des micros au chargement (et quand un périphérique change)
+populateMicList();
+navigator.mediaDevices?.addEventListener('devicechange', populateMicList);

@@ -79,6 +79,20 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 20
 }
 .controls input:focus { outline: none; border-color: var(--accent); }
 
+#mic-select {
+  background: var(--panel-2);
+  border: 1px solid #2c3245;
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  max-width: 200px;
+}
+#mic-select:focus { outline: none; border-color: var(--accent); }
+#mic-select option { background: var(--panel); color: var(--text); }
+
+
 button, .controls a {
   border: none;
   border-radius: 10px;
