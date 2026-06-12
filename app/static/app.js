@@ -23,7 +23,13 @@ async function startRecording() {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
   } catch (err) {
-    alert("Accès au micro refusé ou indisponible.\nVérifiez que la page est bien servie en HTTPS.\n" + err);
+    const causes = {
+      NotAllowedError: "Permission refusée. Autorisez le micro pour ce site (icône à gauche de l'adresse), et vérifiez que la page est servie en HTTPS.",
+      NotReadableError: "Le micro est inaccessible au niveau du système : fermez les applications qui l'utilisent (Teams, Discord...), vérifiez les paramètres de confidentialité micro de l'OS, et le périphérique d'entrée choisi par le navigateur.",
+      NotFoundError: "Aucun micro détecté. Branchez un micro ou choisissez le bon périphérique d'entrée.",
+      OverconstrainedError: "Le micro ne supporte pas les réglages demandés.",
+    };
+    alert("Impossible de démarrer le micro.\n\n" + (causes[err.name] || "") + "\n\n(" + err + ")");
     return;
   }
 
