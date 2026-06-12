@@ -90,6 +90,16 @@ async function populateMicList() {
   }
 }
 
+// fetch avec redirection vers la page de connexion si la session a expiré
+async function api(url, opts) {
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    location.href = '/login';
+    throw new Error('session expirée');
+  }
+  return resp;
+}
+
 // ----------------------------------------------------------- enregistrement
 
 async function startRecording() {
@@ -126,6 +136,7 @@ async function startRecording() {
     
     state.ws.onclose = (e) => {
       console.log(`WebSocket fermé : code=${e.code}, raison=${e.reason}`);
+      if (e.code === 4401) { location.href = '/login'; return; }
       if (state.recording) {
         stopRecording(true);
         if (e.code !== 1000 && e.code !== 1001) {
@@ -341,7 +352,7 @@ function showExportBar(meetingId) {
 // ----------------------------------------------------------------- réunions
 
 async function loadMeetings() {
-  const meetings = await (await fetch('/api/meetings')).json();
+  const meetings = await (await api('/api/meetings')).json();
   const ul = $('meeting-list');
   ul.innerHTML = '';
   for (const m of meetings) {
@@ -357,7 +368,7 @@ async function loadMeetings() {
 
 async function openMeeting(id) {
   if (state.recording) return;
-  const meeting = await (await fetch(`/api/meetings/${id}`)).json();
+  const meeting = await (await api(`/api/meetings/${id}`)).json();
   state.currentMeetingId = id;
   $('transcript-title').textContent = meeting.title;
   clearTranscript();
@@ -373,7 +384,7 @@ async function openMeeting(id) {
 async function deleteCurrentMeeting() {
   if (!state.currentMeetingId || state.recording) return;
   if (!confirm('Supprimer définitivement cette réunion et sa transcription ?')) return;
-  await fetch(`/api/meetings/${state.currentMeetingId}`, { method: 'DELETE' });
+  await api(`/api/meetings/${state.currentMeetingId}`, { method: 'DELETE' });
   state.currentMeetingId = null;
   $('transcript-title').textContent = 'Transcription';
   clearTranscript();
@@ -427,6 +438,7 @@ function togglePause() {
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
 if ($('pause-btn')) $('pause-btn').onclick = togglePause;
+$('logout-btn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; };
 $('copy-btn').onclick = copyTranscript;
 $('delete-btn').onclick = deleteCurrentMeeting;
 loadMeetings();

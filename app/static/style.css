@@ -41,6 +41,14 @@ header h1 { font-size: 1.2rem; }
 .badge.busy { background: #2a2410; color: #ffd166; }
 .badge.error { background: #3a181a; color: #ff8589; }
 
+#logout-btn {
+  margin-left: auto;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  color: var(--muted);
+}
+#logout-btn:hover { color: var(--text); }
+
 .layout { display: flex; flex: 1; min-height: 0; }
 
 aside {
