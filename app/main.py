@@ -5,6 +5,7 @@ import hmac
 import io
 import json
 import os
+import re
 import secrets
 import time
 import wave
@@ -25,6 +26,21 @@ ASR_BASE_URL = os.environ.get("ASR_BASE_URL", "http://asr:8000/v1").rstrip("/")
 ASR_MODEL = os.environ.get("ASR_MODEL", "Qwen/Qwen3-ASR-1.7B")
 ASR_API_KEY = os.environ.get("ASR_API_KEY", "sk-local")
 ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip()
+
+# Qwen3-ASR transcrit les sons non verbaux (hmm, toux...) en interjections
+# chinoises et vLLM ignore le paramètre language : si la langue configurée
+# n'est pas une langue CJK, on retire ces caractères des transcriptions.
+CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿＀-￯]+")
+STRIP_CJK = ASR_LANGUAGE.lower() not in ("", "zh", "ja", "ko", "yue")
+
+
+def clean_transcript(text: str) -> str:
+    if STRIP_CJK and CJK_RE.search(text):
+        text = CJK_RE.sub(" ", text)
+        text = re.sub(r"\s+", " ", text)
+        text = text.lstrip(" 。，、！？.,;!?")  # ponctuation orpheline en tête
+        text = text.rstrip(" 。，、！？")        # ponctuation chinoise en queue
+    return text.strip()
 
 LIVEFLOW_USER = os.environ.get("LIVEFLOW_USER", "admin")
 LIVEFLOW_PASSWORD = os.environ.get("LIVEFLOW_PASSWORD", "admin")
@@ -241,6 +257,10 @@ async def ws_transcribe(ws: WebSocket):
                 print(f"[réunion {meeting_id}] ERREUR ASR : {exc}", flush=True)
                 await ws.send_json({"type": "error", "message": f"Transcription échouée : {exc}"})
                 continue
+            cleaned = clean_transcript(text)
+            if cleaned != text:
+                print(f"[réunion {meeting_id}] filtré (CJK) : {text[:60]!r} -> {cleaned[:60]!r}", flush=True)
+            text = cleaned
             print(f"[réunion {meeting_id}] texte : {text[:80]!r}", flush=True)
             if not text:
                 continue
