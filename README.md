@@ -66,6 +66,13 @@ docker compose -f docker-compose.unraid.yml up -d app
 > Première utilisation : le paquet ghcr.io doit être **public** (GitHub →
 > page du dépôt → Packages → liveflow → Package settings → Change visibility).
 
+## Authentification
+
+L'interface est protégée par un identifiant/mot de passe (**admin / admin**
+par défaut), définis par les variables `LIVEFLOW_USER` et `LIVEFLOW_PASSWORD`
+du compose. La session dure 7 jours (cookie signé). **Changez le mot de passe
+par défaut si l'application est accessible depuis internet.**
+
 ## Configuration
 
 Variables d'environnement (fichier `.env` à la racine, voir `.env.example`) :

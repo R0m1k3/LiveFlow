@@ -15,6 +15,16 @@ const state = {
 
 const BATCH_SAMPLES = 4096; // ~256 ms de PCM 16 kHz par message WebSocket
 
+// fetch avec redirection vers la page de connexion si la session a expiré
+async function api(url, opts) {
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    location.href = '/login';
+    throw new Error('session expirée');
+  }
+  return resp;
+}
+
 // ----------------------------------------------------------- enregistrement
 
 async function startRecording() {
@@ -43,7 +53,10 @@ async function startRecording() {
   state.ws = new WebSocket(`${proto}://${location.host}/ws`);
   state.ws.onopen = () => state.ws.send(JSON.stringify({ type: 'start', title: $('title').value }));
   state.ws.onmessage = onServerMessage;
-  state.ws.onclose = () => { if (state.recording) stopRecording(true); };
+  state.ws.onclose = (e) => {
+    if (e.code === 4401) { location.href = '/login'; return; }
+    if (state.recording) stopRecording(true);
+  };
 
   state.audioContext = new AudioContext();
   await state.audioContext.audioWorklet.addModule('worklet.js');
@@ -174,7 +187,7 @@ function showExportBar(meetingId) {
 // ----------------------------------------------------------------- réunions
 
 async function loadMeetings() {
-  const meetings = await (await fetch('/api/meetings')).json();
+  const meetings = await (await api('/api/meetings')).json();
   const ul = $('meeting-list');
   ul.innerHTML = '';
   for (const m of meetings) {
@@ -190,7 +203,7 @@ async function loadMeetings() {
 
 async function openMeeting(id) {
   if (state.recording) return;
-  const meeting = await (await fetch(`/api/meetings/${id}`)).json();
+  const meeting = await (await api(`/api/meetings/${id}`)).json();
   state.currentMeetingId = id;
   $('transcript-title').textContent = meeting.title;
   clearTranscript();
@@ -206,7 +219,7 @@ async function openMeeting(id) {
 async function deleteCurrentMeeting() {
   if (!state.currentMeetingId || state.recording) return;
   if (!confirm('Supprimer définitivement cette réunion et sa transcription ?')) return;
-  await fetch(`/api/meetings/${state.currentMeetingId}`, { method: 'DELETE' });
+  await api(`/api/meetings/${state.currentMeetingId}`, { method: 'DELETE' });
   state.currentMeetingId = null;
   $('transcript-title').textContent = 'Transcription';
   clearTranscript();
@@ -226,6 +239,7 @@ async function copyTranscript() {
 // --------------------------------------------------------------------- init
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
+$('logout-btn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; };
 $('copy-btn').onclick = copyTranscript;
 $('delete-btn').onclick = deleteCurrentMeeting;
 loadMeetings();

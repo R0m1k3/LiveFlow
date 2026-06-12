@@ -1,16 +1,21 @@
 import asyncio
+import hashlib
+import hmac
 import io
 import json
 import os
+import secrets
+import time
 import wave
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import aiosqlite
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from segmenter import SAMPLE_RATE, Segment, SpeechSegmenter
 
@@ -20,14 +25,49 @@ ASR_MODEL = os.environ.get("ASR_MODEL", "Qwen/Qwen3-ASR-1.7B")
 ASR_API_KEY = os.environ.get("ASR_API_KEY", "sk-local")
 ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip()
 
+LIVEFLOW_USER = os.environ.get("LIVEFLOW_USER", "admin")
+LIVEFLOW_PASSWORD = os.environ.get("LIVEFLOW_PASSWORD", "admin")
+SESSION_TTL = 7 * 24 * 3600  # 7 jours
+SESSION_COOKIE = "liveflow_session"
+
 db: aiosqlite.Connection | None = None
 http: httpx.AsyncClient | None = None
+session_secret: bytes = b""
+
+
+def load_session_secret() -> bytes:
+    """Secret HMAC persistant pour signer les cookies de session."""
+    path = os.path.join(os.path.dirname(DB_PATH), "session-secret")
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        secret = secrets.token_bytes(32)
+        with open(path, "wb") as f:
+            f.write(secret)
+        return secret
+
+
+def make_session_token() -> str:
+    expiry = str(int(time.time()) + SESSION_TTL)
+    sig = hmac.new(session_secret, expiry.encode(), hashlib.sha256).hexdigest()
+    return f"{expiry}.{sig}"
+
+
+def session_valid(token: str) -> bool:
+    try:
+        expiry, sig = token.split(".", 1)
+        expected = hmac.new(session_secret, expiry.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig, expected) and time.time() < int(expiry)
+    except (ValueError, AttributeError):
+        return False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, http
+    global db, http, session_secret
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    session_secret = load_session_secret()
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     await db.executescript(
@@ -55,6 +95,52 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LiveFlow", lifespan=lifespan)
+
+
+# ----------------------------------------------------------- authentification
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    authed = session_valid(request.cookies.get(SESSION_COOKIE, ""))
+    if path.startswith("/api") and path != "/api/login" and not authed:
+        return JSONResponse({"detail": "Non authentifié"}, status_code=401)
+    if path == "/" and not authed:
+        return RedirectResponse("/login")
+    if path == "/login" and authed:
+        return RedirectResponse("/")
+    return await call_next(request)
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+@app.get("/login")
+async def login_page():
+    return FileResponse("static/login.html")
+
+
+@app.post("/api/login")
+async def login(body: LoginBody):
+    user_ok = hmac.compare_digest(body.username.encode(), LIVEFLOW_USER.encode())
+    pass_ok = hmac.compare_digest(body.password.encode(), LIVEFLOW_PASSWORD.encode())
+    if not (user_ok and pass_ok):
+        raise HTTPException(401, "Identifiants invalides")
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        SESSION_COOKIE, make_session_token(),
+        max_age=SESSION_TTL, httponly=True, samesite="lax",
+    )
+    return resp
+
+
+@app.post("/api/logout")
+async def logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp
 
 
 def pcm_to_wav(pcm: bytes) -> bytes:
@@ -98,6 +184,9 @@ async def transcribe(pcm: bytes) -> str:
 
 @app.websocket("/ws")
 async def ws_transcribe(ws: WebSocket):
+    if not session_valid(ws.cookies.get(SESSION_COOKIE, "")):
+        await ws.close(code=4401)
+        return
     await ws.accept()
 
     # Premier message : {"type": "start", "title": "..."}

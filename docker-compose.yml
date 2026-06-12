@@ -7,6 +7,9 @@ services:
     environment:
       # IP ou nom d'hôte du serveur, pour le certificat HTTPS auto-signé
       - LIVEFLOW_HOST=${LIVEFLOW_HOST:-localhost}
+      # Identifiants de connexion à l'interface
+      - LIVEFLOW_USER=${LIVEFLOW_USER:-admin}
+      - LIVEFLOW_PASSWORD=${LIVEFLOW_PASSWORD:-admin}
       - ASR_BASE_URL=http://asr:8000/v1
       - ASR_MODEL=Qwen/Qwen3-ASR-1.7B
       - ASR_API_KEY=${ASR_API_KEY:-sk-local}
