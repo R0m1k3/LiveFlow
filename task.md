@@ -32,4 +32,6 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - Correction de l'affichage de la liste des micros : demande initiale d'autorisation au chargement de la page et filtrage des périphériques sans identifiant.
 - Ajout de la variable d'environnement DIARIZATION_MAX_SPEAKERS (défaut 8) et intégration dans l'instanciation de SpeakerDiarizer.
 - Résolution des problèmes de synchronisation de la liste des réunions (rechargement systématique dans stopRecording), détection des contextes non sécurisés (affichage d'un bandeau d'erreur si HTTP) et gestion des erreurs de connexion WebSocket.
+- Sécurisation globale de startRecording() et stopRecording() (bloc try/catch global, nettoyage complet et guards pour éléments null) et changement de contrainte de micro de 'exact' à 'ideal' pour éviter de bloquer la captation.
+
 

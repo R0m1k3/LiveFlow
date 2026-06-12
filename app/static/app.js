@@ -66,61 +66,127 @@ async function populateMicList() {
 
 async function startRecording() {
   const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-  const selectedMic = $('mic-select').value;
-  if (selectedMic) audioConstraints.deviceId = { exact: selectedMic };
+  const selectedMic = $('mic-select') ? $('mic-select').value : '';
+  if (selectedMic) audioConstraints.deviceId = { ideal: selectedMic };
 
   try {
+    // 1. Obtenir le flux média (microphone)
     state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     // Rafraîchir les étiquettes des micros une fois la permission accordée
     await populateMicList();
+
+    // 2. Établir la connexion WebSocket
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    state.ws = new WebSocket(`${proto}://${location.host}/ws`);
+    
+    state.ws.onopen = () => {
+      const titleVal = $('title') ? $('title').value : '';
+      const diarizationCb = $('diarization-cb') ? $('diarization-cb').checked : false;
+      state.ws.send(JSON.stringify({
+        type: 'start',
+        title: titleVal,
+        diarization: diarizationCb,
+      }));
+    };
+    
+    state.ws.onmessage = onServerMessage;
+    
+    state.ws.onerror = (err) => {
+      console.error('Erreur WebSocket :', err);
+      setStatus('error', 'Erreur Connexion');
+    };
+    
+    state.ws.onclose = (e) => {
+      console.log(`WebSocket fermé : code=${e.code}, raison=${e.reason}`);
+      if (state.recording) {
+        stopRecording(true);
+        if (e.code !== 1000 && e.code !== 1001) {
+          setStatus('error', `Déconnexion (${e.code})`);
+        }
+      }
+    };
+
+    // 3. Initialiser l'audio
+    state.audioContext = new AudioContext();
+    await state.audioContext.audioWorklet.addModule('worklet.js');
+    const source = state.audioContext.createMediaStreamSource(state.mediaStream);
+    state.workletNode = new AudioWorkletNode(state.audioContext, 'pcm-downsampler');
+    state.workletNode.port.onmessage = (e) => queuePcm(new Int16Array(e.data));
+    source.connect(state.workletNode);
+
+    // 4. Mettre à jour l'interface
+    state.recording = true;
+    state.startedAt = Date.now();
+    state.timerInterval = setInterval(updateTimer, 500);
+    if ($('record-btn')) {
+      $('record-btn').textContent = '■ Arrêter';
+      $('record-btn').classList.add('recording');
+    }
+    if ($('title')) $('title').disabled = true;
+    setStatus('rec', 'Enregistrement…');
+    clearTranscript();
+
   } catch (err) {
+    console.error("Impossible de démarrer l'enregistrement :", err);
+    
+    // Nettoyage en cas d'échec
+    if (state.ws) {
+      try { state.ws.close(); } catch (e) {}
+      state.ws = null;
+    }
+    if (state.mediaStream) {
+      try { state.mediaStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+      state.mediaStream = null;
+    }
+    if (state.audioContext) {
+      try { state.audioContext.close(); } catch (e) {}
+      state.audioContext = null;
+    }
+
     const causes = {
       NotAllowedError: "Permission refusée. Autorisez le micro pour ce site (icône à gauche de l'adresse), et vérifiez que la page est servie en HTTPS.",
       NotReadableError: "Le micro est inaccessible au niveau du système : fermez les applications qui l'utilisent (Teams, Discord...), vérifiez les paramètres de confidentialité micro de l'OS, et le périphérique d'entrée choisi par le navigateur.",
       NotFoundError: "Aucun micro détecté. Branchez un micro ou choisissez le bon périphérique d'entrée.",
       OverconstrainedError: "Le micro ne supporte pas les réglages demandés.",
     };
-    alert("Impossible de démarrer le micro.\n\n" + (causes[err.name] || "") + "\n\n(" + err + ")");
-    return;
+    alert("Impossible de démarrer l'enregistrement.\n\n" + (causes[err.name] || err.message || err) + "\n\n(" + err + ")");
+    setStatus('idle', 'Prêt');
+  }
+}
+
+function stopRecording(abrupt = false) {
+  state.recording = false;
+  clearInterval(state.timerInterval);
+  
+  if (state.workletNode) {
+    try { state.workletNode.disconnect(); } catch (e) {}
+    state.workletNode = null;
+  }
+  if (state.mediaStream) {
+    try { state.mediaStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    state.mediaStream = null;
+  }
+  if (state.audioContext) {
+    try { state.audioContext.close(); } catch (e) {}
+    state.audioContext = null;
   }
 
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  state.ws = new WebSocket(`${proto}://${location.host}/ws`);
-  state.ws.onopen = () => state.ws.send(JSON.stringify({
-    type: 'start',
-    title: $('title').value,
-    diarization: $('diarization-cb').checked,
-  }));
-  state.ws.onmessage = onServerMessage;
-  state.ws.onerror = (err) => {
-    console.error('Erreur WebSocket :', err);
-    setStatus('error', 'Erreur Connexion');
-  };
-  state.ws.onclose = (e) => {
-    console.log(`WebSocket fermé : code=${e.code}, raison=${e.reason}`);
-    if (state.recording) {
-      stopRecording(true);
-      if (e.code !== 1000 && e.code !== 1001) {
-        setStatus('error', `Déconnexion (${e.code})`);
-      }
-    }
-  };
+  if (!abrupt && state.ws && state.ws.readyState === WebSocket.OPEN) {
+    flushPcm();
+    try { state.ws.send(JSON.stringify({ type: 'stop' })); } catch (e) {}
+    setStatus('busy', 'Finalisation…');
+  } else {
+    setStatus('idle', 'Prêt');
+  }
 
-  state.audioContext = new AudioContext();
-  await state.audioContext.audioWorklet.addModule('worklet.js');
-  const source = state.audioContext.createMediaStreamSource(state.mediaStream);
-  state.workletNode = new AudioWorkletNode(state.audioContext, 'pcm-downsampler');
-  state.workletNode.port.onmessage = (e) => queuePcm(new Int16Array(e.data));
-  source.connect(state.workletNode);
-
-  state.recording = true;
-  state.startedAt = Date.now();
-  state.timerInterval = setInterval(updateTimer, 500);
-  $('record-btn').textContent = '■ Arrêter';
-  $('record-btn').classList.add('recording');
-  $('title').disabled = true;
-  setStatus('rec', 'Enregistrement…');
-  clearTranscript();
+  if ($('record-btn')) {
+    $('record-btn').textContent = '● Démarrer';
+    $('record-btn').classList.remove('recording');
+  }
+  if ($('title')) $('title').disabled = false;
+  
+  // Toujours recharger les réunions pour synchroniser la liste (cas d'arrêt abrupt ou échec)
+  loadMeetings();
 }
 
 function queuePcm(samples) {
@@ -138,29 +204,6 @@ function flushPcm() {
   state.sendBuffer = [];
   state.sendBufferSamples = 0;
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(out.buffer);
-}
-
-function stopRecording(abrupt = false) {
-  state.recording = false;
-  clearInterval(state.timerInterval);
-  if (state.workletNode) state.workletNode.disconnect();
-  if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
-  if (state.audioContext) state.audioContext.close();
-
-  if (!abrupt && state.ws && state.ws.readyState === WebSocket.OPEN) {
-    flushPcm();
-    state.ws.send(JSON.stringify({ type: 'stop' }));
-    setStatus('busy', 'Finalisation…');
-  } else {
-    setStatus('idle', 'Prêt');
-  }
-
-  $('record-btn').textContent = '● Démarrer';
-  $('record-btn').classList.remove('recording');
-  $('title').disabled = false;
-  
-  // Toujours recharger les réunions pour synchroniser la liste (cas d'arrêt abrupt ou échec)
-  loadMeetings();
 }
 
 function onServerMessage(event) {
