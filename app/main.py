@@ -19,18 +19,19 @@ ASR_BASE_URL = os.environ.get("ASR_BASE_URL", "http://asr:8000/v1").rstrip("/")
 ASR_MODEL = os.environ.get("ASR_MODEL", "Qwen/Qwen3-ASR-1.7B")
 ASR_API_KEY = os.environ.get("ASR_API_KEY", "sk-local")
 ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip() or "fr"
-DIARIZATION = os.environ.get("DIARIZATION", "off").strip().lower() == "on"
+DIARIZATION = os.environ.get("DIARIZATION", "on").strip().lower() == "on"
 DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.70"))
 DIARIZATION_MAX_SPEAKERS = int(os.environ.get("DIARIZATION_MAX_SPEAKERS", "8"))
 
 db: aiosqlite.Connection | None = None
 http: httpx.AsyncClient | None = None
 embedding_model = None  # EmbeddingModel chargé au lifespan si DIARIZATION=True
+diarization_error = ""
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, http, embedding_model
+    global db, http, embedding_model, diarization_error
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
@@ -62,10 +63,16 @@ async def lifespan(app: FastAPI):
 
     # Charger le modèle de diarisation (lourd, ~30s au premier lancement)
     if DIARIZATION:
-        print("Chargement du modèle de diarisation ECAPA-TDNN…", flush=True)
-        from diarizer import EmbeddingModel
-        embedding_model = await asyncio.to_thread(EmbeddingModel)
-        print("Modèle de diarisation prêt.", flush=True)
+        try:
+            print("Chargement du modèle de diarisation ECAPA-TDNN…", flush=True)
+            from diarizer import EmbeddingModel
+            embedding_model = await asyncio.to_thread(EmbeddingModel)
+            diarization_error = ""
+            print("Modèle de diarisation prêt.", flush=True)
+        except Exception as exc:
+            embedding_model = None
+            diarization_error = str(exc)
+            print(f"Diarisation désactivée : {exc}", flush=True)
 
     http = httpx.AsyncClient(timeout=120)
     yield
@@ -129,17 +136,27 @@ async def ws_transcribe(ws: WebSocket):
 
     title = (start.get("title") or "").strip() or datetime.now().strftime("Réunion du %d/%m/%Y %H:%M")
     # La diarisation est activée si le serveur la supporte ET le client la demande
-    session_diarization = DIARIZATION and start.get("diarization", True)
+    requested_diarization = bool(start.get("diarization", True))
+    session_diarization = DIARIZATION and embedding_model is not None and requested_diarization
     cur = await db.execute(
         "INSERT INTO meetings (title, created_at) VALUES (?, ?)",
         (title, datetime.now(timezone.utc).isoformat()),
     )
     meeting_id = cur.lastrowid
     await db.commit()
-    await ws.send_json({"type": "ready", "meeting_id": meeting_id, "title": title})
+    await ws.send_json({
+        "type": "ready",
+        "meeting_id": meeting_id,
+        "title": title,
+        "diarization": session_diarization,
+        "diarization_available": DIARIZATION and embedding_model is not None,
+        "diarization_requested": requested_diarization,
+        "diarization_error": diarization_error,
+    })
 
     segmenter = SpeechSegmenter()
     queue: asyncio.Queue[Segment | None] = asyncio.Queue()
+    paused = False
 
     async def worker():
         """Identifie le locuteur puis transcrit, dans l'ordre."""
@@ -193,6 +210,8 @@ async def ws_transcribe(ws: WebSocket):
             if msg["type"] == "websocket.disconnect":
                 break
             if msg.get("bytes") is not None:
+                if paused:
+                    continue
                 for seg in segmenter.feed(msg["bytes"]):
                     queue.put_nowait(seg)
             elif msg.get("text"):
@@ -207,11 +226,12 @@ async def ws_transcribe(ws: WebSocket):
                     await ws.send_json({"type": "done", "meeting_id": meeting_id})
                     break
                 elif cmd == "pause":
+                    paused = True
                     # Mettre en pause : forcer la finalisation du segment audio en cours
                     if (last := segmenter.flush()) is not None:
                         queue.put_nowait(last)
                 elif cmd == "resume":
-                    pass
+                    paused = False
     except WebSocketDisconnect:
         pass
     finally:
@@ -227,6 +247,20 @@ async def ws_transcribe(ws: WebSocket):
 
 
 # --------------------------------------------------------------------- API
+
+@app.get("/api/capabilities")
+async def capabilities():
+    return {
+        "diarization": {
+            "enabled": DIARIZATION,
+            "ready": embedding_model is not None,
+            "available": DIARIZATION and embedding_model is not None,
+            "error": diarization_error,
+            "threshold": DIARIZATION_THRESHOLD,
+            "max_speakers": DIARIZATION_MAX_SPEAKERS,
+        }
+    }
+
 
 @app.get("/api/meetings")
 async def list_meetings():
@@ -309,7 +343,8 @@ async def export_meeting(meeting_id: int, format: str = "txt"):
             return f"[{s['speaker']}] {s['text']}" if s.get("speaker") else s["text"]
         body, mime, ext = "\n".join(_txt_line(s) for s in segs) + "\n", "text/plain", "txt"
     else:
-        raise HTTPException(400, "Format inconnu (txt, md, srt, json)")
+        raise HTTPException(400, "Format inconnu (txt, md, srt, json)
+")
 
     return Response(
         content=body,
