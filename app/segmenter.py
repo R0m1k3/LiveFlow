@@ -28,6 +28,7 @@ class Segment:
     pcm: bytes
     t0: float  # secondes depuis le début de la réunion
     t1: float
+    speaker: str = ""  # identifié par le diarizer (vide si désactivé)
 
 
 class SpeechSegmenter:

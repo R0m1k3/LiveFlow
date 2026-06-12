@@ -19,14 +19,17 @@ ASR_BASE_URL = os.environ.get("ASR_BASE_URL", "http://asr:8000/v1").rstrip("/")
 ASR_MODEL = os.environ.get("ASR_MODEL", "Qwen/Qwen3-ASR-1.7B")
 ASR_API_KEY = os.environ.get("ASR_API_KEY", "sk-local")
 ASR_LANGUAGE = os.environ.get("ASR_LANGUAGE", "").strip()
+DIARIZATION = os.environ.get("DIARIZATION", "off").strip().lower() == "on"
+DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.70"))
 
 db: aiosqlite.Connection | None = None
 http: httpx.AsyncClient | None = None
+embedding_model = None  # EmbeddingModel chargé au lifespan si DIARIZATION=True
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, http
+    global db, http, embedding_model
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
@@ -42,12 +45,27 @@ async def lifespan(app: FastAPI):
             meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
             t0 REAL NOT NULL,
             t1 REAL NOT NULL,
-            text TEXT NOT NULL
+            text TEXT NOT NULL,
+            speaker TEXT NOT NULL DEFAULT ''
         );
         """
     )
+    # Migration : ajouter la colonne speaker si elle n'existe pas
+    try:
+        await db.execute("ALTER TABLE segments ADD COLUMN speaker TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+    except Exception:
+        pass  # la colonne existe déjà
     await db.execute("PRAGMA foreign_keys = ON")
     await db.commit()
+
+    # Charger le modèle de diarisation (lourd, ~30s au premier lancement)
+    if DIARIZATION:
+        print("Chargement du modèle de diarisation ECAPA-TDNN…", flush=True)
+        from diarizer import EmbeddingModel
+        embedding_model = await asyncio.to_thread(EmbeddingModel)
+        print("Modèle de diarisation prêt.", flush=True)
+
     http = httpx.AsyncClient(timeout=120)
     yield
     await http.aclose()
@@ -100,7 +118,7 @@ async def transcribe(pcm: bytes) -> str:
 async def ws_transcribe(ws: WebSocket):
     await ws.accept()
 
-    # Premier message : {"type": "start", "title": "..."}
+    # Premier message : {"type": "start", "title": "...", "diarization": bool}
     try:
         start = json.loads(await ws.receive_text())
         assert start.get("type") == "start"
@@ -109,6 +127,8 @@ async def ws_transcribe(ws: WebSocket):
         return
 
     title = (start.get("title") or "").strip() or datetime.now().strftime("Réunion du %d/%m/%Y %H:%M")
+    # La diarisation est activée si le serveur la supporte ET le client la demande
+    session_diarization = DIARIZATION and start.get("diarization", True)
     cur = await db.execute(
         "INSERT INTO meetings (title, created_at) VALUES (?, ?)",
         (title, datetime.now(timezone.utc).isoformat()),
@@ -121,11 +141,30 @@ async def ws_transcribe(ws: WebSocket):
     queue: asyncio.Queue[Segment | None] = asyncio.Queue()
 
     async def worker():
-        """Transcrit les segments dans l'ordre et pousse le texte au client."""
+        """Identifie le locuteur puis transcrit, dans l'ordre."""
+        # Chaque session a son propre diarizer (profils locuteurs isolés)
+        diarizer = None
+        if session_diarization and embedding_model is not None:
+            from diarizer import SpeakerDiarizer
+            diarizer = SpeakerDiarizer(
+                model=embedding_model,
+                threshold=DIARIZATION_THRESHOLD,
+            )
+
         while True:
             seg = await queue.get()
             if seg is None:
                 return
+
+            # Diarisation (~30-80 ms CPU, dans un thread pour ne pas bloquer)
+            speaker = ""
+            if diarizer is not None:
+                try:
+                    speaker = await asyncio.to_thread(diarizer.identify, seg.pcm)
+                except Exception as exc:
+                    print(f"Diarisation échouée : {exc}", flush=True)
+
+            # Transcription ASR (~1-5 s réseau)
             try:
                 text = await transcribe(seg.pcm)
             except Exception as exc:
@@ -133,12 +172,17 @@ async def ws_transcribe(ws: WebSocket):
                 continue
             if not text:
                 continue
+
             await db.execute(
-                "INSERT INTO segments (meeting_id, t0, t1, text) VALUES (?, ?, ?, ?)",
-                (meeting_id, seg.t0, seg.t1, text),
+                "INSERT INTO segments (meeting_id, t0, t1, text, speaker) VALUES (?, ?, ?, ?, ?)",
+                (meeting_id, seg.t0, seg.t1, text, speaker),
             )
             await db.commit()
-            await ws.send_json({"type": "segment", "t0": seg.t0, "t1": seg.t1, "text": text})
+            await ws.send_json({
+                "type": "segment",
+                "t0": seg.t0, "t1": seg.t1,
+                "text": text, "speaker": speaker,
+            })
 
     worker_task = asyncio.create_task(worker())
     try:
@@ -200,7 +244,8 @@ async def get_meeting_or_404(meeting_id: int) -> dict:
 async def get_meeting(meeting_id: int):
     meeting = await get_meeting_or_404(meeting_id)
     rows = await db.execute_fetchall(
-        "SELECT t0, t1, text FROM segments WHERE meeting_id = ? ORDER BY id", (meeting_id,)
+        "SELECT t0, t1, text, speaker FROM segments WHERE meeting_id = ? ORDER BY id",
+        (meeting_id,),
     )
     meeting["segments"] = [dict(r) for r in rows]
     return meeting
@@ -237,16 +282,23 @@ async def export_meeting(meeting_id: int, format: str = "txt"):
         body, mime, ext = json.dumps(meeting, ensure_ascii=False, indent=2), "application/json", "json"
     elif format == "md":
         lines = [f"# {title}", ""]
-        lines += [f"**[{fmt_ts(s['t0'])}]** {s['text']}" for s in segs]
+        for s in segs:
+            prefix = f"**{s['speaker']} —** " if s.get("speaker") else ""
+            lines.append(f"**[{fmt_ts(s['t0'])}]** {prefix}{s['text']}")
         body, mime, ext = "\n\n".join(lines) + "\n", "text/markdown", "md"
     elif format == "srt":
-        blocks = [
-            f"{i}\n{fmt_ts(s['t0'], srt=True)} --> {fmt_ts(s['t1'], srt=True)}\n{s['text']}"
-            for i, s in enumerate(segs, 1)
-        ]
+        blocks = []
+        for i, s in enumerate(segs, 1):
+            speaker_line = f"<i>{s['speaker']}</i>\n" if s.get("speaker") else ""
+            blocks.append(
+                f"{i}\n{fmt_ts(s['t0'], srt=True)} --> {fmt_ts(s['t1'], srt=True)}\n"
+                f"{speaker_line}{s['text']}"
+            )
         body, mime, ext = "\n\n".join(blocks) + "\n", "application/x-subrip", "srt"
     elif format == "txt":
-        body, mime, ext = "\n".join(s["text"] for s in segs) + "\n", "text/plain", "txt"
+        def _txt_line(s: dict) -> str:
+            return f"[{s['speaker']}] {s['text']}" if s.get("speaker") else s["text"]
+        body, mime, ext = "\n".join(_txt_line(s) for s in segs) + "\n", "text/plain", "txt"
     else:
         raise HTTPException(400, "Format inconnu (txt, md, srt, json)")
 

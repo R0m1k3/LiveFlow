@@ -13,6 +13,9 @@ services:
       # Code langue ISO ("fr", "en"...) ou vide pour la détection automatique
       - ASR_LANGUAGE=${ASR_LANGUAGE:-}
       - DB_PATH=/data/liveflow.db
+      # Diarisation des locuteurs (off par défaut pour rétrocompatibilité)
+      - DIARIZATION=${DIARIZATION:-off}
+      - DIARIZATION_THRESHOLD=${DIARIZATION_THRESHOLD:-0.70}
     volumes:
       - liveflow-data:/data
     depends_on:

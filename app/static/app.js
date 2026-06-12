@@ -15,6 +15,19 @@ const state = {
 
 const BATCH_SAMPLES = 4096; // ~256 ms de PCM 16 kHz par message WebSocket
 
+// --- Diarisation : palette de couleurs par locuteur ---
+const SPEAKER_COLORS = 8; // nombre de classes CSS .speaker-0 à .speaker-7
+const speakerMap = {};     // "Speaker 1" → 0, "Speaker 2" → 1, ...
+let speakerCounter = 0;
+
+function getSpeakerColorIndex(speaker) {
+  if (!(speaker in speakerMap)) {
+    speakerMap[speaker] = speakerCounter % SPEAKER_COLORS;
+    speakerCounter++;
+  }
+  return speakerMap[speaker];
+}
+
 // ----------------------------------------------------------- enregistrement
 
 async function startRecording() {
@@ -35,7 +48,11 @@ async function startRecording() {
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   state.ws = new WebSocket(`${proto}://${location.host}/ws`);
-  state.ws.onopen = () => state.ws.send(JSON.stringify({ type: 'start', title: $('title').value }));
+  state.ws.onopen = () => state.ws.send(JSON.stringify({
+    type: 'start',
+    title: $('title').value,
+    diarization: $('diarization-cb').checked,
+  }));
   state.ws.onmessage = onServerMessage;
   state.ws.onclose = () => { if (state.recording) stopRecording(true); };
 
@@ -136,12 +153,20 @@ function fmtTs(seconds) {
 
 function clearTranscript() {
   $('transcript').innerHTML = '';
+  // Reset le mapping locuteurs pour chaque nouvelle session
+  for (const key in speakerMap) delete speakerMap[key];
+  speakerCounter = 0;
 }
 
 function appendSegment(seg) {
   const div = document.createElement('div');
   div.className = 'segment';
-  div.innerHTML = `<span class="ts">${fmtTs(seg.t0)}</span><span class="text"></span>`;
+  let speakerHtml = '';
+  if (seg.speaker) {
+    const ci = getSpeakerColorIndex(seg.speaker);
+    speakerHtml = `<span class="speaker speaker-${ci}">${seg.speaker}</span>`;
+  }
+  div.innerHTML = `<span class="ts">${fmtTs(seg.t0)}</span>${speakerHtml}<span class="text"></span>`;
   div.querySelector('.text').textContent = seg.text;
   $('transcript').appendChild(div);
   $('transcript').scrollTop = $('transcript').scrollHeight;
@@ -199,9 +224,12 @@ async function deleteCurrentMeeting() {
 }
 
 async function copyTranscript() {
-  const text = [...document.querySelectorAll('#transcript .segment .text')]
-    .map((el) => el.textContent).join('\n');
-  await navigator.clipboard.writeText(text);
+  const lines = [...document.querySelectorAll('#transcript .segment')].map((el) => {
+    const speaker = el.querySelector('.speaker');
+    const text = el.querySelector('.text').textContent;
+    return speaker ? `[${speaker.textContent}] ${text}` : text;
+  });
+  await navigator.clipboard.writeText(lines.join('\n'));
   $('copy-btn').textContent = '✓ Copié';
   setTimeout(() => ($('copy-btn').textContent = '📋 Copier'), 1500);
 }
