@@ -3,7 +3,6 @@ name: Build & publish Docker image
 on:
   push:
     branches: ["main", "claude/**"]
-    paths: ["app/**", ".github/workflows/build-image.yml"]
   workflow_dispatch:
 
 permissions:
