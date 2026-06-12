@@ -13,6 +13,9 @@ const state = {
   currentMeetingId: null,
   lastLoudAt: 0,
   silentWarned: false,
+  sourceNode: null,
+  autoMicQueue: null,
+  switching: false,
 };
 
 const BATCH_SAMPLES = 4096; // ~256 ms de PCM 16 kHz par message WebSocket
@@ -46,14 +49,62 @@ async function listMics() {
   } catch (e) { /* énumération indisponible : on garde "Micro par défaut" */ }
 }
 
+function micConstraints(deviceId) {
+  const c = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  if (deviceId) c.deviceId = { exact: deviceId };
+  return c;
+}
+
+// Bascule sur un autre micro sans interrompre l'enregistrement.
+async function switchMic(deviceId) {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(deviceId) });
+  } catch (e) {
+    return false;
+  }
+  if (state.sourceNode) state.sourceNode.disconnect();
+  if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
+  state.mediaStream = stream;
+  state.sourceNode = state.audioContext.createMediaStreamSource(stream);
+  state.sourceNode.connect(state.workletNode);
+  state.lastLoudAt = Date.now();
+  return true;
+}
+
+// Si le micro actif reste muet, essaie les autres micros un par un.
+async function autoNextMic() {
+  if (state.switching || !state.recording) return;
+  state.switching = true;
+  try {
+    if (!state.autoMicQueue) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const current = state.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId;
+      state.autoMicQueue = devices.filter((d) =>
+        d.kind === 'audioinput' && d.deviceId &&
+        d.deviceId !== 'default' && d.deviceId !== 'communications' &&
+        d.deviceId !== current);
+    }
+    const next = state.autoMicQueue.shift();
+    if (!next) {
+      setStatus('error', 'Aucun micro ne capte de son — vérifiez côté système');
+      return;
+    }
+    setStatus('busy', 'Micro muet — essai : ' + (next.label || 'micro sans nom'));
+    if (await switchMic(next.deviceId)) {
+      $('mic-select').value = next.deviceId;
+    }
+  } finally {
+    state.switching = false;
+  }
+}
+
 // ----------------------------------------------------------- enregistrement
 
 async function startRecording() {
-  const constraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   const micId = localStorage.getItem('liveflow-mic');
-  if (micId) constraints.deviceId = { exact: micId };
   try {
-    state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+    state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(micId) });
   } catch (firstErr) {
     // Micro choisi indisponible ou pilote qui refuse les options de
     // traitement audio : on retente avec la contrainte minimale.
@@ -82,10 +133,10 @@ async function startRecording() {
 
   state.audioContext = new AudioContext();
   await state.audioContext.audioWorklet.addModule('worklet.js');
-  const source = state.audioContext.createMediaStreamSource(state.mediaStream);
   state.workletNode = new AudioWorkletNode(state.audioContext, 'pcm-downsampler');
   state.workletNode.port.onmessage = (e) => queuePcm(new Int16Array(e.data));
-  source.connect(state.workletNode);
+  state.sourceNode = state.audioContext.createMediaStreamSource(state.mediaStream);
+  state.sourceNode.connect(state.workletNode);
 
   // les libellés des micros ne sont disponibles qu'une fois la permission accordée
   listMics();
@@ -94,6 +145,7 @@ async function startRecording() {
   state.startedAt = Date.now();
   state.lastLoudAt = Date.now();
   state.silentWarned = false;
+  state.autoMicQueue = null;
   state.timerInterval = setInterval(updateTimer, 500);
   $('record-btn').textContent = '■ Arrêter';
   $('record-btn').classList.add('recording');
@@ -133,6 +185,7 @@ function flushPcm() {
 function stopRecording(abrupt = false) {
   state.recording = false;
   clearInterval(state.timerInterval);
+  if (state.sourceNode) state.sourceNode.disconnect();
   if (state.workletNode) state.workletNode.disconnect();
   if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
   if (state.audioContext) state.audioContext.close();
@@ -184,14 +237,21 @@ function updateTimer() {
   $('timer').textContent =
     String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 
-  // alerte si le micro ne capte plus rien depuis 5 s
+  // micro muet depuis 5 s : on essaie automatiquement les autres micros
   if (!state.recording) return;
   const silent = Date.now() - state.lastLoudAt > 5000;
-  if (silent && !state.silentWarned) {
+  if (silent) {
     state.silentWarned = true;
-    setStatus('error', 'Aucun son capté — changez de micro dans la liste');
-  } else if (!silent && state.silentWarned) {
+    autoNextMic();
+  } else if (state.silentWarned) {
+    // un micro qui capte du son a été trouvé : on le mémorise
     state.silentWarned = false;
+    state.autoMicQueue = null;
+    const id = state.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId;
+    if (id) {
+      localStorage.setItem('liveflow-mic', id);
+      $('mic-select').value = id;
+    }
     setStatus('rec', 'Enregistrement…');
   }
 }
@@ -279,7 +339,11 @@ async function copyTranscript() {
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
 $('logout-btn').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; };
-$('mic-select').onchange = () => localStorage.setItem('liveflow-mic', $('mic-select').value);
+$('mic-select').onchange = async () => {
+  const id = $('mic-select').value;
+  localStorage.setItem('liveflow-mic', id);
+  if (state.recording) await switchMic(id || undefined);  // bascule à chaud
+};
 listMics();
 $('copy-btn').onclick = copyTranscript;
 $('delete-btn').onclick = deleteCurrentMeeting;
