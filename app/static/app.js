@@ -12,6 +12,7 @@ const state = {
   startedAt: null,
   currentMeetingId: null,
   lastLoudAt: 0,
+  heardSound: false,  // un micro a déjà capté du son : on ne change plus
   silentWarned: false,
   sourceNode: null,
   gainNode: null,
@@ -166,6 +167,7 @@ async function startRecording() {
   state.paused = false;
   state.startedAt = Date.now();
   state.lastLoudAt = Date.now();
+  state.heardSound = false;
   state.silentWarned = false;
   state.autoMicQueue = null;
   state.timerInterval = setInterval(updateTimer, 500);
@@ -197,7 +199,10 @@ function updateVu(samples) {
     if (v > peak) peak = v;
   }
   $('vu-bar').style.width = Math.min(100, (peak / 32768) * 140) + '%';
-  if (peak > 1500) state.lastLoudAt = Date.now();
+  if (peak > 1500) {
+    state.lastLoudAt = Date.now();
+    state.heardSound = true;
+  }
   autoGain(peak);
 }
 
@@ -304,22 +309,26 @@ function updateTimer() {
   $('timer').textContent =
     String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 
-  // micro muet depuis 5 s : on essaie automatiquement les autres micros
-  if (!state.recording || state.paused) return;
-  const silent = Date.now() - state.lastLoudAt > 5000;
-  if (silent) {
+  // Recherche automatique de micro : UNIQUEMENT tant qu'aucun son n'a
+  // jamais été capté depuis le début (un silence en cours de réunion est
+  // normal et ne doit jamais déclencher un changement de micro).
+  if (!state.recording || state.paused || state.heardSound) {
+    if (state.silentWarned && state.heardSound) {
+      // le micro fonctionne : on le mémorise et on arrête la recherche
+      state.silentWarned = false;
+      state.autoMicQueue = null;
+      const id = state.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId;
+      if (id) {
+        localStorage.setItem('liveflow-mic', id);
+        $('mic-select').value = id;
+      }
+      setStatus('rec', 'Enregistrement…');
+    }
+    return;
+  }
+  if (Date.now() - state.lastLoudAt > 5000) {
     state.silentWarned = true;
     autoNextMic();
-  } else if (state.silentWarned) {
-    // un micro qui capte du son a été trouvé : on le mémorise
-    state.silentWarned = false;
-    state.autoMicQueue = null;
-    const id = state.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId;
-    if (id) {
-      localStorage.setItem('liveflow-mic', id);
-      $('mic-select').value = id;
-    }
-    setStatus('rec', 'Enregistrement…');
   }
 }
 
@@ -419,7 +428,11 @@ $('logout-btn').onclick = async () => { await fetch('/api/logout', { method: 'PO
 $('mic-select').onchange = async () => {
   const id = $('mic-select').value;
   localStorage.setItem('liveflow-mic', id);
-  if (state.recording) await switchMic(id || undefined);  // bascule à chaud
+  if (state.recording) {
+    await switchMic(id || undefined);  // bascule à chaud
+    state.heardSound = false;          // le nouveau micro doit faire ses preuves
+    state.autoMicQueue = null;
+  }
 };
 listMics();
 $('copy-btn').onclick = copyTranscript;
