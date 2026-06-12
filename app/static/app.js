@@ -1,5 +1,30 @@
 const $ = (id) => document.getElementById(id);
 
+// Capturer et afficher les erreurs JavaScript non gérées à l'écran
+window.onerror = function (message, source, lineno, colno, error) {
+  const errText = `Erreur JS : ${message} (Ligne ${lineno}:${colno} dans ${source ? source.split('/').pop() : 'inconnu'})`;
+  console.error(errText, error);
+  showVisualError(errText);
+};
+
+window.onunhandledrejection = function (event) {
+  const errText = `Erreur de Promesse : ${event.reason}`;
+  console.error(errText);
+  showVisualError(errText);
+};
+
+function showVisualError(text) {
+  let box = $('visual-error-box');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'visual-error-box';
+    box.style.cssText = 'background: #4c1113; color: #ff8589; padding: 14px; margin: 10px; border: 2px solid #e5484d; border-radius: 8px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; z-index: 10000; position: relative;';
+    const parent = $('transcript-panel') || document.body;
+    parent.insertBefore(box, parent.firstChild);
+  }
+  box.textContent = text;
+}
+
 // Vérification du contexte sécurisé (requis pour le micro et les périphériques)
 if (window.isSecureContext === false) {
   const warning = document.createElement('div');
@@ -185,12 +210,29 @@ function stopRecording(abrupt = false) {
   }
   if ($('title')) $('title').disabled = false;
   
+  const bar = $('volume-bar');
+  if (bar) bar.style.width = '0%';
+  
   // Toujours recharger les réunions pour synchroniser la liste (cas d'arrêt abrupt ou échec)
   loadMeetings();
 }
 
+function updateVolumeIndicator(samples) {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sum += samples[i] * samples[i];
+  }
+  const rms = Math.sqrt(sum / samples.length);
+  // Normaliser rms (amplitude max ~32768) vers un pourcentage (0 - 100)
+  // On applique un facteur de boost pour la visibilité des voix normales (divisé par 2500)
+  const percentage = Math.min(100, Math.round((rms / 2500) * 100));
+  const bar = $('volume-bar');
+  if (bar) bar.style.width = percentage + '%';
+}
+
 function queuePcm(samples) {
   if (!state.recording || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  updateVolumeIndicator(samples);
   state.sendBuffer.push(samples);
   state.sendBufferSamples += samples.length;
   if (state.sendBufferSamples >= BATCH_SAMPLES) flushPcm();

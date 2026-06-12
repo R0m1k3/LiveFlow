@@ -20,6 +20,8 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - [x] Vérification de la cohérence de tous les fichiers et validation
 - [x] Correction de tout bug ou problème détecté
 - [x] Rendre configurable le nombre maximal de locuteurs (DIARIZATION_MAX_SPEAKERS, défaut 8) dans main.py, .env.example et docker-compose.yml
+- [x] Créer l'afficheur de volume micro en temps réel (visualiseur audio) dans index.html, style.css et app.js
+- [x] Mettre en place la capture et l'affichage des erreurs JS non gérées à l'écran pour faciliter le diagnostic
 
 
 ## Progress Log
@@ -33,5 +35,7 @@ Vérification de la cohérence de tous les fichiers (backend et frontend) et tes
 - Ajout de la variable d'environnement DIARIZATION_MAX_SPEAKERS (défaut 8) et intégration dans l'instanciation de SpeakerDiarizer.
 - Résolution des problèmes de synchronisation de la liste des réunions (rechargement systématique dans stopRecording), détection des contextes non sécurisés (affichage d'un bandeau d'erreur si HTTP) et gestion des erreurs de connexion WebSocket.
 - Sécurisation globale de startRecording() et stopRecording() (bloc try/catch global, nettoyage complet et guards pour éléments null) et changement de contrainte de micro de 'exact' à 'ideal' pour éviter de bloquer la captation.
+- Création d'un indicateur visuel de volume micro en temps réel calculé par RMS.
+- Intégration d'un système de capture d'erreurs JavaScript globales affichées à l'écran pour le diagnostic.
 
 
