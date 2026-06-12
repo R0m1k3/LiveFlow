@@ -39,6 +39,11 @@ Puis ouvrir **https://\<ip-du-serveur\>:8443** depuis un PC ou un téléphone du
 réseau local, accepter l'avertissement de certificat, autoriser le micro, et
 cliquer sur **Démarrer**.
 
+Sur iPhone/iPad, utiliser impérativement **HTTPS** (`https://<ip>:8443` ou un
+reverse proxy HTTPS). Safari bloque le micro en HTTP sur le réseau local.
+Après acceptation du certificat, le bouton **Démarrer** déclenche la demande
+micro et l'interface passe en mode mobile.
+
 > ⚠️ Le HTTPS est obligatoire : les navigateurs n'autorisent l'accès au micro
 > (`getUserMedia`) qu'en HTTPS (ou sur `localhost`). L'app génère elle-même un
 > certificat auto-signé au premier démarrage pour l'adresse `LIVEFLOW_HOST`
@@ -75,6 +80,14 @@ Variables d'environnement (fichier `.env` à la racine, voir `.env.example`) :
 | `ASR_LANGUAGE` | *(vide)* | Code langue forcé (`fr`, `en`…) ; vide = détection auto |
 | `ASR_API_KEY` | `sk-local` | Clé envoyée au moteur ASR (inutile en local) |
 | `HF_TOKEN` | *(vide)* | Jeton Hugging Face si nécessaire au téléchargement |
+| `DIARIZATION` | `on` | Active les badges locuteurs (`Locuteur 1`, `Locuteur 2`…) |
+| `DIARIZATION_THRESHOLD` | `0.70` | Seuil de séparation des voix |
+| `DIARIZATION_MAX_SPEAKERS` | `8` | Nombre maximal de locuteurs par réunion |
+
+La première activation de la diarisation télécharge le modèle SpeechBrain
+ECAPA-TDNN dans `/data/models/ecapa-tdnn`. Si le modèle n'est pas chargé,
+l'interface désactive l'option **Locuteurs** au lieu de laisser croire que la
+fonction est active.
 
 ## Changer de moteur de transcription
 
