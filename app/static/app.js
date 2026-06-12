@@ -14,6 +14,8 @@ const state = {
   lastLoudAt: 0,
   silentWarned: false,
   sourceNode: null,
+  gainNode: null,
+  lastGainAt: 0,
   autoMicQueue: null,
   switching: false,
   paused: false,
@@ -77,7 +79,8 @@ async function switchMic(deviceId) {
   if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
   state.mediaStream = stream;
   state.sourceNode = state.audioContext.createMediaStreamSource(stream);
-  state.sourceNode.connect(state.workletNode);
+  state.sourceNode.connect(state.gainNode);
+  state.gainNode.gain.value = 1; // le nouveau micro repart d'un gain neutre
   state.lastLoudAt = Date.now();
   return true;
 }
@@ -149,8 +152,12 @@ async function startRecording() {
   await state.audioContext.audioWorklet.addModule('worklet.js');
   state.workletNode = new AudioWorkletNode(state.audioContext, 'pcm-downsampler');
   state.workletNode.port.onmessage = (e) => queuePcm(new Int16Array(e.data));
+  // gain automatique : compense les micros trop faibles (casques...)
+  state.gainNode = state.audioContext.createGain();
+  state.gainNode.gain.value = 1;
+  state.gainNode.connect(state.workletNode);
   state.sourceNode = state.audioContext.createMediaStreamSource(state.mediaStream);
-  state.sourceNode.connect(state.workletNode);
+  state.sourceNode.connect(state.gainNode);
 
   // les libellés des micros ne sont disponibles qu'une fois la permission accordée
   listMics();
@@ -191,6 +198,23 @@ function updateVu(samples) {
   }
   $('vu-bar').style.width = Math.min(100, (peak / 32768) * 140) + '%';
   if (peak > 1500) state.lastLoudAt = Date.now();
+  autoGain(peak);
+}
+
+// Gain automatique : monte progressivement le volume des micros faibles
+// jusqu'à un niveau exploitable par la détection de parole, et redescend
+// en cas de saturation. Ajusté au plus toutes les 250 ms.
+function autoGain(peak) {
+  if (!state.gainNode || state.paused) return;
+  const now = Date.now();
+  if (now - state.lastGainAt < 250) return;
+  state.lastGainAt = now;
+  const g = state.gainNode.gain.value;
+  if (peak > 26000) {
+    state.gainNode.gain.value = Math.max(1, g * 0.7);       // proche saturation
+  } else if (peak > 200 && peak < 8000) {
+    state.gainNode.gain.value = Math.min(40, g * 1.25);     // parole trop faible
+  }
 }
 
 function flushPcm() {
