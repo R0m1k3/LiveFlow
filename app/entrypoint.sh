@@ -8,6 +8,14 @@ CERT_DIR=${CERT_DIR:-/data/certs}
 HOST=${LIVEFLOW_HOST:-localhost}
 CERT="$CERT_DIR/cert.pem"
 KEY="$CERT_DIR/key.pem"
+
+# LIVEFLOW_TLS=off : servir en HTTP simple, pour les déploiements derrière un
+# reverse proxy (Nginx Proxy Manager, SWAG...) qui gère déjà le HTTPS.
+if [ "${LIVEFLOW_TLS:-on}" = "off" ]; then
+  echo "LIVEFLOW_TLS=off : démarrage en HTTP (TLS délégué au reverse proxy)"
+  exec uvicorn main:app --host 0.0.0.0 --port 8000
+fi
+
 mkdir -p "$CERT_DIR"
 
 case "$HOST" in
