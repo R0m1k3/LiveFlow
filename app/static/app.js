@@ -12,13 +12,11 @@ const state = {
   startedAt: null,
   currentMeetingId: null,
   lastLoudAt: 0,
-  heardSound: false,  // un micro a déjà capté du son : on ne change plus
+  heardSound: false,
   silentWarned: false,
   sourceNode: null,
   gainNode: null,
   lastGainAt: 0,
-  autoMicQueue: null,
-  switching: false,
   paused: false,
 };
 
@@ -81,37 +79,11 @@ async function switchMic(deviceId) {
   state.mediaStream = stream;
   state.sourceNode = state.audioContext.createMediaStreamSource(stream);
   state.sourceNode.connect(state.gainNode);
-  state.gainNode.gain.value = 1; // le nouveau micro repart d'un gain neutre
+  state.gainNode.gain.value = savedGain();
   state.lastLoudAt = Date.now();
   return true;
 }
 
-// Si le micro actif reste muet, essaie les autres micros un par un.
-async function autoNextMic() {
-  if (state.switching || !state.recording) return;
-  state.switching = true;
-  try {
-    if (!state.autoMicQueue) {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const current = state.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId;
-      state.autoMicQueue = devices.filter((d) =>
-        d.kind === 'audioinput' && d.deviceId &&
-        d.deviceId !== 'default' && d.deviceId !== 'communications' &&
-        d.deviceId !== current);
-    }
-    const next = state.autoMicQueue.shift();
-    if (!next) {
-      setStatus('error', 'Aucun micro ne capte de son — vérifiez côté système');
-      return;
-    }
-    setStatus('busy', 'Micro muet — essai : ' + (next.label || 'micro sans nom'));
-    if (await switchMic(next.deviceId)) {
-      $('mic-select').value = next.deviceId;
-    }
-  } finally {
-    state.switching = false;
-  }
-}
 
 // ----------------------------------------------------------- enregistrement
 
@@ -155,7 +127,7 @@ async function startRecording() {
   state.workletNode.port.onmessage = (e) => queuePcm(new Int16Array(e.data));
   // gain automatique : compense les micros trop faibles (casques...)
   state.gainNode = state.audioContext.createGain();
-  state.gainNode.gain.value = 1;
+  state.gainNode.gain.value = savedGain();  // repart du gain mémorisé
   state.gainNode.connect(state.workletNode);
   state.sourceNode = state.audioContext.createMediaStreamSource(state.mediaStream);
   state.sourceNode.connect(state.gainNode);
@@ -169,7 +141,6 @@ async function startRecording() {
   state.lastLoudAt = Date.now();
   state.heardSound = false;
   state.silentWarned = false;
-  state.autoMicQueue = null;
   state.timerInterval = setInterval(updateTimer, 500);
   $('record-btn').textContent = '■ Arrêter';
   $('record-btn').classList.add('recording');
@@ -207,18 +178,28 @@ function updateVu(samples) {
 }
 
 // Gain automatique : monte progressivement le volume des micros faibles
-// jusqu'à un niveau exploitable par la détection de parole, et redescend
-// en cas de saturation. Ajusté au plus toutes les 250 ms.
+// jusqu'à un niveau exploitable par la détection de parole, redescend en cas
+// de saturation, et mémorise le gain trouvé pour les prochaines réunions.
+function savedGain() {
+  const g = parseFloat(localStorage.getItem('liveflow-gain'));
+  return Number.isFinite(g) ? Math.min(80, Math.max(1, g)) : 1;
+}
+
 function autoGain(peak) {
   if (!state.gainNode || state.paused) return;
   const now = Date.now();
   if (now - state.lastGainAt < 250) return;
   state.lastGainAt = now;
   const g = state.gainNode.gain.value;
-  if (peak > 26000) {
-    state.gainNode.gain.value = Math.max(1, g * 0.7);       // proche saturation
-  } else if (peak > 200 && peak < 8000) {
-    state.gainNode.gain.value = Math.min(40, g * 1.25);     // parole trop faible
+  let next = g;
+  if (peak > 27000) {
+    next = Math.max(1, g * 0.7);            // proche saturation
+  } else if (peak > 60 && peak < 12000) {
+    next = Math.min(80, g * 1.3);           // signal trop faible
+  }
+  if (next !== g) {
+    state.gainNode.gain.value = next;
+    localStorage.setItem('liveflow-gain', String(next));
   }
 }
 
@@ -309,26 +290,19 @@ function updateTimer() {
   $('timer').textContent =
     String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 
-  // Recherche automatique de micro : UNIQUEMENT tant qu'aucun son n'a
-  // jamais été capté depuis le début (un silence en cours de réunion est
-  // normal et ne doit jamais déclencher un changement de micro).
-  if (!state.recording || state.paused || state.heardSound) {
-    if (state.silentWarned && state.heardSound) {
-      // le micro fonctionne : on le mémorise et on arrête la recherche
+  // Simple alerte tant qu'aucun son n'a jamais été capté : l'app ne change
+  // JAMAIS de micro toute seule (le choix se fait dans la liste).
+  if (!state.recording || state.paused) return;
+  if (state.heardSound) {
+    if (state.silentWarned) {
       state.silentWarned = false;
-      state.autoMicQueue = null;
-      const id = state.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId;
-      if (id) {
-        localStorage.setItem('liveflow-mic', id);
-        $('mic-select').value = id;
-      }
       setStatus('rec', 'Enregistrement…');
     }
     return;
   }
-  if (Date.now() - state.lastLoudAt > 5000) {
+  if (!state.silentWarned && Date.now() - state.lastLoudAt > 5000) {
     state.silentWarned = true;
-    autoNextMic();
+    setStatus('error', 'Aucun son capté — choisissez un autre micro dans la liste');
   }
 }
 
@@ -429,9 +403,8 @@ $('mic-select').onchange = async () => {
   const id = $('mic-select').value;
   localStorage.setItem('liveflow-mic', id);
   if (state.recording) {
-    await switchMic(id || undefined);  // bascule à chaud
-    state.heardSound = false;          // le nouveau micro doit faire ses preuves
-    state.autoMicQueue = null;
+    await switchMic(id || undefined);  // bascule à chaud, à la demande
+    state.heardSound = false;
   }
 };
 listMics();
