@@ -25,10 +25,14 @@ class _SpeakerProfile:
     label: str
     embedding: np.ndarray            # centroïde courant (moyenne mobile)
     count: int = 0                   # nombre d'observations
-    _ema_alpha: float = field(default=0.3, repr=False)
+    _ema_alpha: float = field(default=0.15, repr=False)
 
     def update(self, new_emb: np.ndarray) -> None:
-        """Met à jour le centroïde via une moyenne mobile exponentielle."""
+        """Met à jour le centroïde via une moyenne mobile exponentielle.
+
+        Alpha faible : le centroïde reste stable et ne dérive pas vers les
+        variations d'un segment à l'autre (qui scinderaient un même locuteur).
+        """
         self.count += 1
         if self.count == 1:
             self.embedding = new_emb.copy()
@@ -106,59 +110,77 @@ class SpeakerDiarizer:
     profils de locuteurs. Le modèle d'embedding est partagé (EmbeddingModel).
     """
 
+    # Un nouveau locuteur n'est créé que si le meilleur score est NETTEMENT
+    # sous le seuil (zone morte) ET que le segment est assez long pour donner
+    # une empreinte fiable. Sinon le segment est rattaché au meilleur profil.
+    # Cela évite qu'un même locuteur soit éclaté en Locuteur 3, 4, 5...
+    NEW_SPEAKER_MARGIN = 0.20   # écart sous le seuil pour autoriser un nouveau
+    NEW_SPEAKER_MIN_S = 1.2     # durée mini d'un segment pour créer un locuteur
+    STICKY_MARGIN = 0.05        # adhérence au dernier locuteur si scores proches
+
     def __init__(
         self,
         model: EmbeddingModel,
-        threshold: float = 0.70,
+        threshold: float = 0.35,
         max_speakers: int = 8,
     ) -> None:
         self._model = model
         self._threshold = threshold
         self._max_speakers = max_speakers
         self._profiles: list[_SpeakerProfile] = []
+        self._last: _SpeakerProfile | None = None
 
     def identify(self, pcm: bytes, sample_rate: int = 16000) -> str:
         """Identifie le locuteur d'un segment PCM.
 
         Returns:
-            Label du locuteur ("Locuteur 1", "Locuteur 2", etc.)
-            ou chaîne vide si le segment est trop court pour être analysé.
+            Label du locuteur ("Locuteur 1", "Locuteur 2"...) ou chaîne vide
+            si le segment est trop court pour être analysé.
         """
         try:
             embedding = self._model.extract(pcm, sample_rate)
         except ValueError:
-            # Segment trop court — on ne peut pas identifier le locuteur
             return ""
 
-        # Comparer avec les profils existants
-        best_score = -1.0
-        best_profile: _SpeakerProfile | None = None
+        duration_s = (len(pcm) // 2) / sample_rate
 
-        for profile in self._profiles:
-            score = _cosine_similarity(embedding, profile.embedding)
-            if score > best_score:
-                best_score = score
-                best_profile = profile
+        # Score de chaque profil existant
+        scores = [(_cosine_similarity(embedding, p.embedding), p) for p in self._profiles]
+        best_score, best_profile = max(scores, default=(-1.0, None), key=lambda x: x[0])
 
+        # Adhérence : si le dernier locuteur est presque aussi proche que le
+        # meilleur, on le garde (réduit le clignotement entre deux profils).
+        if self._last is not None and best_profile is not self._last:
+            last_score = next((s for s, p in scores if p is self._last), -1.0)
+            if last_score >= best_score - self.STICKY_MARGIN:
+                best_score, best_profile = last_score, self._last
+
+        # Rattachement à un locuteur connu
         if best_profile is not None and best_score >= self._threshold:
             best_profile.update(embedding)
+            self._last = best_profile
             return best_profile.label
 
-        # Nouveau locuteur (sauf si on a atteint le max)
-        if len(self._profiles) >= self._max_speakers:
-            # Forcer l'attribution au profil le plus proche
-            if best_profile is not None:
-                best_profile.update(embedding)
-                return best_profile.label
-            # Cas dégénéré : aucun profil et max atteint (ne devrait pas arriver)
-            return "Locuteur 1"
+        # Création d'un nouveau locuteur : conditions strictes
+        can_create = (
+            len(self._profiles) < self._max_speakers
+            and duration_s >= self.NEW_SPEAKER_MIN_S
+            and best_score < self._threshold - self.NEW_SPEAKER_MARGIN
+        )
+        if not can_create and best_profile is not None:
+            # Zone ambiguë ou segment court : on rattache au plus proche
+            best_profile.update(embedding)
+            self._last = best_profile
+            return best_profile.label
 
         new_label = f"Locuteur {len(self._profiles) + 1}"
         new_profile = _SpeakerProfile(label=new_label, embedding=embedding)
         new_profile.update(embedding)
         self._profiles.append(new_profile)
+        self._last = new_profile
         return new_label
 
     def reset(self) -> None:
         """Réinitialise les profils pour une nouvelle session."""
         self._profiles.clear()
+        self._last = None

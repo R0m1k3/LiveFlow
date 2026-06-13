@@ -44,7 +44,7 @@ def clean_transcript(text: str) -> str:
 
 # Diarisation (identification des locuteurs) : embeddings ECAPA-TDNN sur CPU
 DIARIZATION = os.environ.get("DIARIZATION", "off").strip().lower() == "on"
-DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.70"))
+DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.35"))
 DIARIZATION_MAX_SPEAKERS = int(os.environ.get("DIARIZATION_MAX_SPEAKERS", "8"))
 
 LIVEFLOW_USER = os.environ.get("LIVEFLOW_USER", "admin")

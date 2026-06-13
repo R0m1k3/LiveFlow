@@ -9,6 +9,8 @@ silence prolongé ou une durée maximale.
 from collections import deque
 from dataclasses import dataclass
 
+import audioop
+
 import webrtcvad
 
 SAMPLE_RATE = 16000
@@ -22,6 +24,15 @@ SILENCE_END_MS = 700       # silence qui clôt un segment
 MIN_SPEECH_MS = 300        # en dessous, le segment est ignoré (bruit)
 MAX_SEGMENT_S = 25         # coupe forcée pour garder une latence raisonnable
 
+# Contrôle de gain automatique appliqué AVANT la détection de parole : sans lui,
+# un micro faible (casque...) reste sous le seuil du VAD et aucune phrase n'est
+# détectée. On amène le niveau crête vers une cible exploitable.
+AGC_TARGET_PEAK = 11000    # niveau crête visé (échelle int16)
+AGC_NOISE_FLOOR = 120      # en dessous : du silence, on n'amplifie pas
+AGC_MAX_GAIN = 60.0        # amplification maximale
+AGC_ATTACK = 0.5           # vitesse de montée du gain (0-1)
+AGC_RELEASE = 0.2          # vitesse de descente du gain (0-1)
+
 
 @dataclass
 class Segment:
@@ -30,9 +41,29 @@ class Segment:
     t1: float
 
 
+class _AutoGain:
+    """Amplification adaptative du flux pour fiabiliser la détection de parole."""
+
+    def __init__(self):
+        self.gain = 1.0
+
+    def process(self, frame: bytes) -> bytes:
+        peak = audioop.max(frame, 2)
+        if peak >= AGC_NOISE_FLOOR:
+            desired = min(AGC_MAX_GAIN, AGC_TARGET_PEAK / peak)
+            rate = AGC_ATTACK if desired > self.gain else AGC_RELEASE
+            self.gain += (desired - self.gain) * rate
+            self.gain = max(1.0, min(AGC_MAX_GAIN, self.gain))
+        if self.gain > 1.01:
+            return audioop.mul(frame, 2, self.gain)
+        return frame
+
+
+
 class SpeechSegmenter:
     def __init__(self):
         self._vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
+        self._agc = _AutoGain()
         self._pending = bytearray()
         self._ring: deque[tuple[bytes, bool]] = deque(maxlen=PREROLL_FRAMES)
         self._frame_index = 0
@@ -49,6 +80,7 @@ class SpeechSegmenter:
         while len(self._pending) >= FRAME_BYTES:
             frame = bytes(self._pending[:FRAME_BYTES])
             del self._pending[:FRAME_BYTES]
+            frame = self._agc.process(frame)  # amplifie avant le VAD
             seg = self._process_frame(frame)
             if seg is not None:
                 segments.append(seg)

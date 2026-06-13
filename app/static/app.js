@@ -15,8 +15,6 @@ const state = {
   heardSound: false,
   silentWarned: false,
   sourceNode: null,
-  gainNode: null,
-  lastGainAt: 0,
   paused: false,
 };
 
@@ -78,8 +76,7 @@ async function switchMic(deviceId) {
   if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
   state.mediaStream = stream;
   state.sourceNode = state.audioContext.createMediaStreamSource(stream);
-  state.sourceNode.connect(state.gainNode);
-  state.gainNode.gain.value = savedGain();
+  state.sourceNode.connect(state.workletNode);
   state.lastLoudAt = Date.now();
   return true;
 }
@@ -125,12 +122,10 @@ async function startRecording() {
   await state.audioContext.audioWorklet.addModule('worklet.js');
   state.workletNode = new AudioWorkletNode(state.audioContext, 'pcm-downsampler');
   state.workletNode.port.onmessage = (e) => queuePcm(new Int16Array(e.data));
-  // gain automatique : compense les micros trop faibles (casques...)
-  state.gainNode = state.audioContext.createGain();
-  state.gainNode.gain.value = savedGain();  // repart du gain mémorisé
-  state.gainNode.connect(state.workletNode);
+  // L'amplification des micros faibles se fait côté serveur (AGC avant le
+  // VAD) : le client envoie l'audio brut, sans gain qui se battrait avec.
   state.sourceNode = state.audioContext.createMediaStreamSource(state.mediaStream);
-  state.sourceNode.connect(state.gainNode);
+  state.sourceNode.connect(state.workletNode);
 
   // les libellés des micros ne sont disponibles qu'une fois la permission accordée
   listMics();
@@ -169,37 +164,12 @@ function updateVu(samples) {
     const v = Math.abs(samples[i]);
     if (v > peak) peak = v;
   }
-  $('vu-bar').style.width = Math.min(100, (peak / 32768) * 140) + '%';
-  if (peak > 1500) {
+  // Affichage amplifié (x8) : le serveur amplifie le signal réel, le vumètre
+  // reflète l'activité même avec un micro faible.
+  $('vu-bar').style.width = Math.min(100, (peak / 32768) * 140 * 8) + '%';
+  if (peak > 150) {
     state.lastLoudAt = Date.now();
     state.heardSound = true;
-  }
-  autoGain(peak);
-}
-
-// Gain automatique : monte progressivement le volume des micros faibles
-// jusqu'à un niveau exploitable par la détection de parole, redescend en cas
-// de saturation, et mémorise le gain trouvé pour les prochaines réunions.
-function savedGain() {
-  const g = parseFloat(localStorage.getItem('liveflow-gain'));
-  return Number.isFinite(g) ? Math.min(80, Math.max(1, g)) : 1;
-}
-
-function autoGain(peak) {
-  if (!state.gainNode || state.paused) return;
-  const now = Date.now();
-  if (now - state.lastGainAt < 250) return;
-  state.lastGainAt = now;
-  const g = state.gainNode.gain.value;
-  let next = g;
-  if (peak > 27000) {
-    next = Math.max(1, g * 0.7);            // proche saturation
-  } else if (peak > 60 && peak < 12000) {
-    next = Math.min(80, g * 1.3);           // signal trop faible
-  }
-  if (next !== g) {
-    state.gainNode.gain.value = next;
-    localStorage.setItem('liveflow-gain', String(next));
   }
 }
 
