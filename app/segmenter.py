@@ -22,7 +22,7 @@ PREROLL_FRAMES = 10        # 300 ms conservées avant le déclenchement
 TRIGGER_RATIO = 0.6        # part de trames "parole" du pré-roll pour démarrer
 SILENCE_END_MS = 700       # silence qui clôt un segment
 MIN_SPEECH_MS = 300        # en dessous, le segment est ignoré (bruit)
-MAX_SEGMENT_S = 25         # coupe forcée pour garder une latence raisonnable
+MAX_SEGMENT_S = 15         # coupe forcée pour garder une latence raisonnable
 
 # Contrôle de gain automatique appliqué AVANT la détection de parole : sans lui,
 # un micro faible (casque...) reste sous le seuil du VAD et aucune phrase n'est
@@ -83,10 +83,12 @@ class SpeechSegmenter:
         self._pending.extend(data)
         segments = []
         while len(self._pending) >= FRAME_BYTES:
-            frame = bytes(self._pending[:FRAME_BYTES])
+            raw = bytes(self._pending[:FRAME_BYTES])
             del self._pending[:FRAME_BYTES]
-            frame = self._agc.process(frame)  # amplifie avant le VAD
-            seg = self._process_frame(frame)
+            # Le VAD travaille sur l'audio amplifié (détection fiable même micro
+            # faible) ; le segment stocke l'audio BRUT (transcription propre).
+            amplified = self._agc.process(raw)
+            seg = self._process_frame(raw, amplified)
             if seg is not None:
                 segments.append(seg)
         return segments
@@ -98,12 +100,12 @@ class SpeechSegmenter:
         self._pending.clear()
         return seg
 
-    def _process_frame(self, frame: bytes) -> Segment | None:
-        is_speech = self._vad.is_speech(frame, SAMPLE_RATE)
+    def _process_frame(self, raw: bytes, amplified: bytes) -> Segment | None:
+        is_speech = self._vad.is_speech(amplified, SAMPLE_RATE)
         self._frame_index += 1
 
         if not self._triggered:
-            self._ring.append((frame, is_speech))
+            self._ring.append((raw, is_speech))
             voiced = sum(1 for _, s in self._ring if s)
             if len(self._ring) == self._ring.maxlen and voiced >= TRIGGER_RATIO * self._ring.maxlen:
                 self._triggered = True
@@ -114,7 +116,7 @@ class SpeechSegmenter:
                 self._ring.clear()
             return None
 
-        self._segment.extend(frame)
+        self._segment.extend(raw)
         if is_speech:
             self._speech_frames += 1
             self._silence_frames = 0

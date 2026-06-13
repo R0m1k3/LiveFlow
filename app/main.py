@@ -189,19 +189,28 @@ def pcm_to_wav(pcm: bytes) -> bytes:
     return buf.getvalue()
 
 
-QUIET_PEAK = 9000  # niveau crête en dessous duquel on amplifie (échelle int16)
+NORM_TARGET_PEAK = 22000   # niveau crête visé (≈0,67 pleine échelle), sans saturer
+NORM_MAX_GAIN = 25.0       # amplification maximale
+NORM_NOISE_FLOOR = 80      # en dessous : silence, on ne touche pas
 
 
 def boost_quiet_audio(pcm: bytes) -> tuple[bytes, int]:
-    """Amplifie les segments trop faibles (micros Bluetooth mains-libres...).
+    """Normalise proprement le niveau du segment pour le moteur ASR.
 
-    Retourne (audio, niveau crête d'origine).
+    Mise à l'échelle linéaire unique du segment entier vers un niveau cible
+    confortable, SANS saturation (gain = cible / crête), bien meilleure pour
+    la reconnaissance qu'une amplification par à-coups. Renvoie (audio, crête).
     """
     peak = audioop.max(pcm, 2)
-    if 0 < peak < QUIET_PEAK:
-        factor = min(6.0, 26000 / peak)
-        return audioop.mul(pcm, 2, factor), peak
-    return pcm, peak
+    if peak < NORM_NOISE_FLOOR:
+        return pcm, peak
+    gain = min(NORM_MAX_GAIN, NORM_TARGET_PEAK / peak)
+    if gain <= 1.05:
+        return pcm, peak
+    try:
+        return audioop.mul(pcm, 2, gain), peak
+    except Exception:
+        return pcm, peak
 
 
 async def _post_transcription(data: dict, wav: bytes) -> httpx.Response:
