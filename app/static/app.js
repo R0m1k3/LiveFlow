@@ -86,6 +86,7 @@ async function switchMic(deviceId) {
 // ----------------------------------------------------------- enregistrement
 
 async function startRecording() {
+  keepAwake();  // DANS le geste de clic, avant tout await (requis par iOS)
   const micId = localStorage.getItem('liveflow-mic');
   try {
     state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(micId) });
@@ -102,6 +103,7 @@ async function startRecording() {
         OverconstrainedError: "Le micro ne supporte pas les réglages demandés.",
       };
       alert("Impossible de démarrer le micro.\n\n" + (causes[err.name] || "") + "\n\n(" + err + ")");
+      allowSleep();  // échec micro : on relâche l'anti-veille
       return;
     }
   }
@@ -138,7 +140,6 @@ async function startRecording() {
   state.heardSound = false;
   state.silentWarned = false;
   state.timerInterval = setInterval(updateTimer, 500);
-  acquireWakeLock();  // garde l'écran allumé (téléphone)
   $('record-btn').textContent = '■ Arrêter';
   $('record-btn').classList.add('recording');
   $('pause-btn').classList.remove('hidden', 'paused');
@@ -188,7 +189,7 @@ function flushPcm() {
 function stopRecording(abrupt = false) {
   state.recording = false;
   clearInterval(state.timerInterval);
-  releaseWakeLock();
+  allowSleep();
   if (state.sourceNode) state.sourceNode.disconnect();
   if (state.workletNode) state.workletNode.disconnect();
   if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
@@ -369,23 +370,62 @@ async function copyTranscript() {
 
 // --------------------------------------------------------------------- init
 
-// Verrou d'écran : empêche le téléphone de se mettre en veille pendant
-// l'enregistrement (sinon micro/WebSocket suspendus). iOS 16.4+, Android.
+// --- Anti-veille (téléphone) ---
+// Deux mécanismes combinés : l'API Wake Lock (iOS 16.4+/Android) ET, en repli,
+// une micro-vidéo muette en boucle alimentée par un canvas (fonctionne sur les
+// iOS plus anciens où Wake Lock est ignoré). À déclencher DANS le geste de clic.
+
 async function acquireWakeLock() {
   try {
     if ('wakeLock' in navigator) {
       state.wakeLock = await navigator.wakeLock.request('screen');
     }
-  } catch (e) { /* refusé / non supporté : tant pis */ }
+  } catch (e) { /* refusé / non supporté : le repli vidéo prend le relais */ }
 }
 function releaseWakeLock() {
   try { state.wakeLock && state.wakeLock.release(); } catch (e) {}
   state.wakeLock = null;
 }
+
+function startNoSleepVideo() {
+  try {
+    if (!state.noSleepVideo) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 2;
+      const ctx = canvas.getContext('2d');
+      state.noSleepDraw = setInterval(() => {
+        ctx.fillStyle = state._t ? '#000' : '#001';
+        state._t = !state._t;
+        ctx.fillRect(0, 0, 2, 2);
+      }, 1000);
+      const v = document.createElement('video');
+      v.muted = true; v.setAttribute('muted', '');
+      v.playsInline = true; v.setAttribute('playsinline', '');
+      v.loop = true;
+      v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+      v.srcObject = canvas.captureStream(2);
+      document.body.appendChild(v);
+      state.noSleepVideo = v;
+    }
+    const p = state.noSleepVideo.play();
+    if (p) p.catch(() => {});
+  } catch (e) { /* tant pis */ }
+}
+function stopNoSleepVideo() {
+  try {
+    if (state.noSleepVideo) state.noSleepVideo.pause();
+    if (state.noSleepDraw) clearInterval(state.noSleepDraw);
+    state.noSleepDraw = null;
+  } catch (e) {}
+}
+
+function keepAwake() { acquireWakeLock(); startNoSleepVideo(); }
+function allowSleep() { releaseWakeLock(); stopNoSleepVideo(); }
+
 // iOS relâche le verrou quand l'onglet repasse au premier plan : on le reprend
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
-    if (state.recording) acquireWakeLock();
+    if (state.recording) keepAwake();
     else loadMeetings();  // rafraîchit la liste en revenant sur l'onglet
   }
 });
