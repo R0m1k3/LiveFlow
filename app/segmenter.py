@@ -17,11 +17,11 @@ SAMPLE_RATE = 16000
 FRAME_MS = 30
 FRAME_BYTES = SAMPLE_RATE * FRAME_MS // 1000 * 2  # 960 octets
 
-VAD_AGGRESSIVENESS = 2
-PREROLL_FRAMES = 10        # 300 ms conservées avant le déclenchement
-TRIGGER_RATIO = 0.6        # part de trames "parole" du pré-roll pour démarrer
-SILENCE_END_MS = 700       # silence qui clôt un segment
-MIN_SPEECH_MS = 300        # en dessous, le segment est ignoré (bruit)
+VAD_AGGRESSIVENESS = 1     # plus sensible : capte les attaques/fins douces
+PREROLL_FRAMES = 25        # 750 ms gardées avant le déclenchement (début de phrase)
+TRIGGER_RATIO = 0.35       # déclenche vite, sur peu de trames "parole"
+SILENCE_END_MS = 950       # silence qui clôt un segment (capte les fins de mots)
+MIN_SPEECH_MS = 240        # en dessous, le segment est ignoré (bruit)
 MAX_SEGMENT_S = 15         # coupe forcée pour garder une latence raisonnable
 
 # Contrôle de gain automatique appliqué AVANT la détection de parole : sans lui,
