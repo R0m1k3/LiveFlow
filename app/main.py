@@ -283,13 +283,16 @@ async def ws_transcribe(ws: WebSocket):
                   f"({len(seg.pcm) / 2 / SAMPLE_RATE:.1f}s d'audio, niveau crête {peak}"
                   f"{', amplifié' if pcm is not seg.pcm else ''}), transcription...", flush=True)
 
-            # Diarisation (~30-80 ms CPU, dans un thread pour ne pas bloquer)
+            # Diarisation (~30-80 ms CPU). Strictement isolée : ni un blocage
+            # ni une erreur ne doivent empêcher la transcription qui suit.
             speaker = ""
             if diarizer is not None:
                 try:
-                    speaker = await asyncio.to_thread(diarizer.identify, pcm)
+                    speaker = await asyncio.wait_for(
+                        asyncio.to_thread(diarizer.identify, pcm), timeout=5.0
+                    )
                 except Exception as exc:
-                    print(f"[réunion {meeting_id}] diarisation échouée : {exc}", flush=True)
+                    print(f"[réunion {meeting_id}] diarisation ignorée : {exc}", flush=True)
 
             try:
                 text = await transcribe(pcm)

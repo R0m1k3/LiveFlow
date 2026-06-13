@@ -48,14 +48,19 @@ class _AutoGain:
         self.gain = 1.0
 
     def process(self, frame: bytes) -> bytes:
-        peak = audioop.max(frame, 2)
-        if peak >= AGC_NOISE_FLOOR:
-            desired = min(AGC_MAX_GAIN, AGC_TARGET_PEAK / peak)
-            rate = AGC_ATTACK if desired > self.gain else AGC_RELEASE
-            self.gain += (desired - self.gain) * rate
-            self.gain = max(1.0, min(AGC_MAX_GAIN, self.gain))
-        if self.gain > 1.01:
-            return audioop.mul(frame, 2, self.gain)
+        # Toute erreur ici ne doit JAMAIS interrompre le découpage : on
+        # renvoie la trame d'origine en cas de souci.
+        try:
+            peak = audioop.max(frame, 2)
+            if peak >= AGC_NOISE_FLOOR:
+                desired = min(AGC_MAX_GAIN, AGC_TARGET_PEAK / peak)
+                rate = AGC_ATTACK if desired > self.gain else AGC_RELEASE
+                self.gain += (desired - self.gain) * rate
+                self.gain = max(1.0, min(AGC_MAX_GAIN, self.gain))
+            if self.gain > 1.01:
+                return audioop.mul(frame, 2, self.gain)  # audioop sature, ne déborde pas
+        except Exception:
+            return frame
         return frame
 
 
