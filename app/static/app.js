@@ -16,6 +16,7 @@ const state = {
   silentWarned: false,
   sourceNode: null,
   paused: false,
+  wakeLock: null,
 };
 
 // couleurs des étiquettes de locuteurs (classes .speaker-0 à .speaker-7)
@@ -137,6 +138,7 @@ async function startRecording() {
   state.heardSound = false;
   state.silentWarned = false;
   state.timerInterval = setInterval(updateTimer, 500);
+  acquireWakeLock();  // garde l'écran allumé (téléphone)
   $('record-btn').textContent = '■ Arrêter';
   $('record-btn').classList.add('recording');
   $('pause-btn').classList.remove('hidden', 'paused');
@@ -186,6 +188,7 @@ function flushPcm() {
 function stopRecording(abrupt = false) {
   state.recording = false;
   clearInterval(state.timerInterval);
+  releaseWakeLock();
   if (state.sourceNode) state.sourceNode.disconnect();
   if (state.workletNode) state.workletNode.disconnect();
   if (state.mediaStream) state.mediaStream.getTracks().forEach((t) => t.stop());
@@ -365,6 +368,30 @@ async function copyTranscript() {
 }
 
 // --------------------------------------------------------------------- init
+
+// Verrou d'écran : empêche le téléphone de se mettre en veille pendant
+// l'enregistrement (sinon micro/WebSocket suspendus). iOS 16.4+, Android.
+async function acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      state.wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch (e) { /* refusé / non supporté : tant pis */ }
+}
+function releaseWakeLock() {
+  try { state.wakeLock && state.wakeLock.release(); } catch (e) {}
+  state.wakeLock = null;
+}
+// iOS relâche le verrou quand l'onglet repasse au premier plan : on le reprend
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (state.recording) acquireWakeLock();
+    else loadMeetings();  // rafraîchit la liste en revenant sur l'onglet
+  }
+});
+window.addEventListener('focus', () => { if (!state.recording) loadMeetings(); });
+// rafraîchit régulièrement la liste (réunions faites depuis un autre appareil)
+setInterval(() => { if (!state.recording) loadMeetings(); }, 20000);
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
 $('pause-btn').onclick = togglePause;

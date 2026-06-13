@@ -114,14 +114,14 @@ class SpeakerDiarizer:
     # sous le seuil (zone morte) ET que le segment est assez long pour donner
     # une empreinte fiable. Sinon le segment est rattaché au meilleur profil.
     # Cela évite qu'un même locuteur soit éclaté en Locuteur 3, 4, 5...
-    NEW_SPEAKER_MARGIN = 0.20   # écart sous le seuil pour autoriser un nouveau
-    NEW_SPEAKER_MIN_S = 1.2     # durée mini d'un segment pour créer un locuteur
+    NEW_SPEAKER_MARGIN = 0.05   # écart sous le seuil pour autoriser un nouveau
+    NEW_SPEAKER_MIN_S = 1.0     # durée mini d'un segment pour créer un locuteur
     STICKY_MARGIN = 0.05        # adhérence au dernier locuteur si scores proches
 
     def __init__(
         self,
         model: EmbeddingModel,
-        threshold: float = 0.35,
+        threshold: float = 0.40,
         max_speakers: int = 8,
     ) -> None:
         self._model = model
