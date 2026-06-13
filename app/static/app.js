@@ -140,7 +140,7 @@ async function startRecording() {
   state.heardSound = false;
   state.silentWarned = false;
   state.timerInterval = setInterval(updateTimer, 500);
-  $('record-btn').textContent = '■ Arrêter';
+  $('record-btn').querySelector('.rec-label').textContent = 'Arrêter';
   $('record-btn').classList.add('recording');
   $('pause-btn').classList.remove('hidden', 'paused');
   $('pause-btn').textContent = '⏸ Pause';
@@ -203,7 +203,7 @@ function stopRecording(abrupt = false) {
     setStatus('idle', 'Prêt');
   }
 
-  $('record-btn').textContent = '● Démarrer';
+  $('record-btn').querySelector('.rec-label').textContent = 'Démarrer';
   $('record-btn').classList.remove('recording');
   $('pause-btn').classList.add('hidden');
   state.paused = false;
@@ -323,7 +323,7 @@ async function loadMeetings() {
     const date = new Date(m.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
     li.innerHTML = `<span class="m-title"></span><span class="m-meta">${date} · ${fmtTs(m.duration)}</span>`;
     li.querySelector('.m-title').textContent = m.title;
-    li.onclick = () => openMeeting(m.id);
+    li.onclick = () => { openMeeting(m.id); document.body.classList.remove('drawer-open'); };
     if (m.id === state.currentMeetingId) li.classList.add('active');
     ul.appendChild(li);
   }
@@ -432,6 +432,11 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', () => { if (!state.recording) loadMeetings(); });
 // rafraîchit régulièrement la liste (réunions faites depuis un autre appareil)
 setInterval(() => { if (!state.recording) loadMeetings(); }, 20000);
+
+// tiroir latéral (mobile)
+const closeDrawer = () => document.body.classList.remove('drawer-open');
+if ($('menu-btn')) $('menu-btn').onclick = () => document.body.classList.toggle('drawer-open');
+if ($('scrim')) $('scrim').onclick = closeDrawer;
 
 $('record-btn').onclick = () => (state.recording ? stopRecording() : startRecording());
 $('pause-btn').onclick = togglePause;

@@ -2,48 +2,60 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d12">
   <title>LiveFlow — Transcription de réunions</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
-  <header>
-    <h1>🎙️ LiveFlow</h1>
+  <header class="topbar">
+    <button id="menu-btn" class="icon-btn" aria-label="Réunions">☰</button>
+    <div class="brand"><span class="brand-logo">🎙️</span><span>LiveFlow</span></div>
     <span id="status" class="badge idle">Prêt</span>
-    <button id="logout-btn" title="Se déconnecter">Déconnexion</button>
+    <button id="logout-btn" class="icon-btn ghost" title="Se déconnecter">Déconnexion</button>
   </header>
 
   <div class="layout">
-    <aside>
-      <h2>Réunions</h2>
-      <ul id="meeting-list"></ul>
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-head">Réunions</div>
+      <ul id="meeting-list" class="meeting-list"></ul>
     </aside>
+    <div id="scrim" class="scrim"></div>
 
-    <main>
-      <section class="controls">
+    <main class="main">
+      <section class="controls card">
         <input id="title" type="text" placeholder="Titre de la réunion (optionnel)">
-        <select id="mic-select" title="Choix du micro">
-          <option value="">Micro par défaut</option>
-        </select>
-        <button id="record-btn" class="record">● Démarrer</button>
-        <button id="pause-btn" class="pause hidden">⏸ Pause</button>
-        <span id="timer">00:00</span>
-        <div id="vu" title="Niveau du micro"><div id="vu-bar"></div></div>
-        <label id="diarization-toggle" class="toggle" title="Identifier qui parle (Locuteur 1, 2...)">
-          <input type="checkbox" id="diarization-cb" checked> Locuteurs
-        </label>
+
+        <div class="control-row">
+          <select id="mic-select" title="Choix du micro">
+            <option value="">Micro par défaut</option>
+          </select>
+          <label id="diarization-toggle" class="toggle" title="Identifier qui parle (Locuteur 1, 2...)">
+            <input type="checkbox" id="diarization-cb" checked>
+            <span>Locuteurs</span>
+          </label>
+        </div>
+
+        <div class="record-row">
+          <button id="record-btn" class="record">
+            <span class="rec-dot"></span><span class="rec-label">Démarrer</span>
+          </button>
+          <button id="pause-btn" class="pause hidden">⏸ Pause</button>
+          <span id="timer">00:00</span>
+          <div id="vu" title="Niveau du micro"><div id="vu-bar"></div></div>
+        </div>
       </section>
 
-      <section id="transcript-panel">
+      <section id="transcript-panel" class="card">
         <div class="panel-head">
           <h2 id="transcript-title">Transcription</h2>
           <div id="export-bar" class="hidden">
             <button id="copy-btn" title="Copier le texte">📋 Copier</button>
-            <a id="export-txt" download>TXT</a>
-            <a id="export-md" download>MD</a>
-            <a id="export-srt" download>SRT</a>
-            <a id="export-json" download>JSON</a>
+            <a id="export-txt" class="chip" download>TXT</a>
+            <a id="export-md" class="chip" download>MD</a>
+            <a id="export-srt" class="chip" download>SRT</a>
+            <a id="export-json" class="chip" download>JSON</a>
             <button id="delete-btn" title="Supprimer la réunion">🗑️</button>
           </div>
         </div>
@@ -54,6 +66,6 @@
     </main>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>
