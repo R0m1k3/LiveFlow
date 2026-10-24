@@ -68,10 +68,21 @@ docker compose -f docker-compose.unraid.yml up -d app
 
 ## Authentification
 
-L'interface est protégée par un identifiant/mot de passe (**admin / admin**
-par défaut), définis par les variables `LIVEFLOW_USER` et `LIVEFLOW_PASSWORD`
-du compose. La session dure 7 jours (cookie signé). **Changez le mot de passe
-par défaut si l'application est accessible depuis internet.**
+L'interface est protégée par un identifiant/mot de passe, définis par les
+variables `LIVEFLOW_USER` (défaut `admin`) et `LIVEFLOW_PASSWORD` du compose.
+La session dure 7 jours (cookie signé).
+
+### Sécurité / variables obligatoires
+
+- `LIVEFLOW_PASSWORD` : sans valeur, un mot de passe aléatoire est généré au
+  premier démarrage, affiché une seule fois dans les journaux
+  (`docker compose logs app`) et conservé dans `/data/liveflow-password`.
+  L'ancienne valeur `admin` est refusée.
+- Connexion limitée : après 5 échecs depuis une même adresse, attente
+  croissante (jusqu'à 15 min) entre deux tentatives.
+- Le port 8443 est publié sur toutes les interfaces pour l'accès depuis le
+  réseau local. Ne l'exposez pas tel quel sur internet ; derrière un reverse
+  proxy, liez-le à `127.0.0.1` ou à l'IP locale du serveur.
 
 ## Configuration
 

@@ -29,7 +29,9 @@ DIARIZATION_THRESHOLD = float(os.environ.get("DIARIZATION_THRESHOLD", "0.70"))
 DIARIZATION_MAX_SPEAKERS = int(os.environ.get("DIARIZATION_MAX_SPEAKERS", "8"))
 
 LIVEFLOW_USER = os.environ.get("LIVEFLOW_USER", "admin")
-LIVEFLOW_PASSWORD = os.environ.get("LIVEFLOW_PASSWORD", "admin")
+# Vide ou « admin » (ancien défaut public) : mot de passe aléatoire généré au
+# premier démarrage, conservé dans le volume de données (voir load_password).
+LIVEFLOW_PASSWORD = os.environ.get("LIVEFLOW_PASSWORD", "").strip()
 SESSION_TTL = 7 * 24 * 3600  # 7 jours
 SESSION_COOKIE = "liveflow_session"
 
@@ -37,6 +39,7 @@ db: aiosqlite.Connection | None = None
 http: httpx.AsyncClient | None = None
 embedding_model = None  # EmbeddingModel chargé au lifespan si DIARIZATION=True
 session_secret: bytes = b""
+login_password: str = ""
 
 
 def load_session_secret() -> bytes:
@@ -50,6 +53,62 @@ def load_session_secret() -> bytes:
         with open(path, "wb") as f:
             f.write(secret)
         return secret
+
+
+def load_password() -> str:
+    """Mot de passe de connexion : LIVEFLOW_PASSWORD, sauf s'il est vide ou
+    vaut l'ancien défaut public « admin » ; dans ce cas, mot de passe aléatoire
+    généré une fois, conservé dans le volume et affiché dans les journaux."""
+    if LIVEFLOW_PASSWORD and LIVEFLOW_PASSWORD != "admin":
+        return LIVEFLOW_PASSWORD
+    if LIVEFLOW_PASSWORD == "admin":
+        print("ATTENTION : LIVEFLOW_PASSWORD=admin est refusé (mot de passe public).", flush=True)
+    path = os.path.join(os.path.dirname(DB_PATH), "liveflow-password")
+    try:
+        with open(path, encoding="utf-8") as f:
+            stored = f.read().strip()
+        if stored:
+            print(f"Mot de passe de connexion : voir {path} (ou définir LIVEFLOW_PASSWORD).", flush=True)
+            return stored
+    except FileNotFoundError:
+        pass
+    password = secrets.token_urlsafe(18)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(password + "\n")
+    print("=" * 66, flush=True)
+    print(f"Identifiants générés : {LIVEFLOW_USER} / {password}", flush=True)
+    print(f"(affichés une seule fois, conservés dans {path} ;", flush=True)
+    print(" définissez LIVEFLOW_PASSWORD pour choisir votre mot de passe)", flush=True)
+    print("=" * 66, flush=True)
+    return password
+
+
+# Limitation des tentatives de connexion par IP : après MAX_LOGIN_FAILURES
+# échecs, attente doublée à chaque nouvel échec (plafonnée à 15 min).
+MAX_LOGIN_FAILURES = 5
+MAX_LOCKOUT = 15 * 60
+login_failures: dict[str, tuple[int, float]] = {}  # ip -> (échecs, bloqué jusqu'à)
+
+
+def login_retry_after(ip: str) -> int:
+    """Secondes d'attente avant une nouvelle tentative (0 : autorisée)."""
+    _, locked_until = login_failures.get(ip, (0, 0.0))
+    return max(0, int(locked_until - time.time() + 0.999))
+
+
+def record_login_failure(ip: str) -> None:
+    now = time.time()
+    if len(login_failures) > 10_000:
+        # Purge des entrées anciennes pour borner la mémoire
+        for key, (_, until) in list(login_failures.items()):
+            if until < now - 3600:
+                del login_failures[key]
+    failures = login_failures.get(ip, (0, 0.0))[0] + 1
+    locked_until = 0.0
+    if failures >= MAX_LOGIN_FAILURES:
+        locked_until = now + min(MAX_LOCKOUT, 2 ** (failures - MAX_LOGIN_FAILURES + 1))
+    login_failures[ip] = (failures, locked_until)
 
 
 def make_session_token() -> str:
@@ -69,9 +128,10 @@ def session_valid(token: str) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, http, embedding_model, session_secret
+    global db, http, embedding_model, session_secret, login_password
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     session_secret = load_session_secret()
+    login_password = load_password()
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     await db.executescript(
@@ -142,11 +202,22 @@ async def login_page():
 
 
 @app.post("/api/login")
-async def login(body: LoginBody):
+async def login(body: LoginBody, request: Request):
+    ip = request.client.host if request.client else "inconnue"
+    retry_after = login_retry_after(ip)
+    if retry_after:
+        return JSONResponse(
+            {"detail": f"Trop de tentatives, réessayez dans {retry_after} s"},
+            status_code=429, headers={"Retry-After": str(retry_after)},
+        )
     user_ok = hmac.compare_digest(body.username.encode(), LIVEFLOW_USER.encode())
-    pass_ok = hmac.compare_digest(body.password.encode(), LIVEFLOW_PASSWORD.encode())
+    pass_ok = bool(login_password) and hmac.compare_digest(
+        body.password.encode(), login_password.encode()
+    )
     if not (user_ok and pass_ok):
+        record_login_failure(ip)
         raise HTTPException(401, "Identifiants invalides")
+    login_failures.pop(ip, None)
     resp = JSONResponse({"ok": True})
     resp.set_cookie(
         SESSION_COOKIE, make_session_token(),

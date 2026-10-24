@@ -54,7 +54,9 @@
       if (resp.ok) {
         location.href = '/';
       } else {
-        document.getElementById('login-error').textContent = 'Identifiants invalides';
+        document.getElementById('login-error').textContent = resp.status === 429
+          ? ((await resp.json().catch(() => ({}))).detail || 'Trop de tentatives, réessayez plus tard')
+          : 'Identifiants invalides';
         document.getElementById('password').value = '';
       }
     });

@@ -2,14 +2,19 @@ services:
   app:
     build: ./app
     restart: unless-stopped
+    # Interface web (HTTPS) : publiée sur toutes les interfaces pour l'accès
+    # depuis les autres appareils du réseau local. Derrière un reverse proxy,
+    # limitez-la : "127.0.0.1:8443:8000" (ou l'IP locale du serveur).
     ports:
       - "8443:8000"
     environment:
       # IP ou nom d'hôte du serveur, pour le certificat HTTPS auto-signé
       - LIVEFLOW_HOST=${LIVEFLOW_HOST:-localhost}
       # Identifiants de connexion à l'interface
+      # Mot de passe vide : généré au premier démarrage, affiché une fois dans
+      # les journaux et conservé dans /data/liveflow-password. « admin » est refusé.
       - LIVEFLOW_USER=${LIVEFLOW_USER:-admin}
-      - LIVEFLOW_PASSWORD=${LIVEFLOW_PASSWORD:-admin}
+      - LIVEFLOW_PASSWORD=${LIVEFLOW_PASSWORD:-}
       - ASR_BASE_URL=http://asr:8000/v1
       - ASR_MODEL=Qwen/Qwen3-ASR-1.7B
       - ASR_API_KEY=${ASR_API_KEY:-sk-local}
